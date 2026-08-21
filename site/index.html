@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panama Canal — LNG Transit Wait Times</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --navy:#0b2340;
+    --navy-2:#123a63;
+    --teal:#0f9a92;
+    --teal-light:#e4f6f4;
+    --ink:#16232f;
+    --muted:#5b6b7a;
+    --line:#dde5ea;
+    --bg:#f4f7f9;
+    --card:#ffffff;
+    --warn:#c0552b;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:"Segoe UI", Arial, sans-serif;
+    background:var(--bg);
+    color:var(--ink);
+  }
+  header{
+    background:linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+    color:#fff;
+    padding:28px 36px;
+  }
+  header h1{
+    margin:0 0 4px 0;
+    font-size:22px;
+    letter-spacing:.2px;
+  }
+  header p{
+    margin:0;
+    color:#bcd3e6;
+    font-size:13px;
+  }
+  .wrap{
+    max-width:1100px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+  }
+  .banner{
+    background:#fff4e9;
+    border:1px solid #f0c9a0;
+    color:#8a4a1a;
+    padding:10px 16px;
+    border-radius:6px;
+    font-size:13px;
+    margin-bottom:24px;
+  }
+  .cards{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
+    gap:16px;
+    margin-bottom:28px;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:20px;
+    border-top:4px solid var(--teal);
+  }
+  .card h3{
+    margin:0 0 2px 0;
+    font-size:14px;
+    color:var(--navy);
+    text-transform:uppercase;
+    letter-spacing:.4px;
+  }
+  .card .sub{
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:14px;
+  }
+  .stat{
+    font-size:34px;
+    font-weight:700;
+    color:var(--navy);
+    line-height:1;
+  }
+  .stat span{
+    font-size:15px;
+    font-weight:500;
+    color:var(--muted);
+    margin-left:6px;
+  }
+  .dir-row{
+    display:flex;
+    justify-content:space-between;
+    margin-top:14px;
+    padding-top:12px;
+    border-top:1px solid var(--line);
+    font-size:13px;
+  }
+  .dir-row div b{
+    color:var(--navy);
+    font-size:16px;
+    display:block;
+  }
+  section{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:22px;
+    margin-bottom:24px;
+  }
+  section h2{
+    margin:0 0 14px 0;
+    font-size:16px;
+    color:var(--navy);
+  }
+  .section-sub{
+    margin:-8px 0 16px 0;
+    font-size:12px;
+    color:var(--muted);
+  }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+  }
+  th, td{
+    text-align:left;
+    padding:9px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  th{
+    background:var(--teal-light);
+    color:var(--navy);
+    font-weight:600;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  tr:hover td{ background:#fafcfd; }
+  .empty{
+    color:var(--muted);
+    font-size:13px;
+    padding:16px 0;
+  }
+  .badge{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:20px;
+    font-size:11px;
+    font-weight:600;
+  }
+  .badge.nb{ background:#e4f6f4; color:#0f7a73; }
+  .badge.sb{ background:#eef1fb; color:#3a4fa0; }
+  footer{
+    text-align:center;
+    color:var(--muted);
+    font-size:12px;
+    padding:20px;
+  }
+  .chart-box{
+    max-width:640px;
+    margin:0 auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Panama Canal — LNG Transit Wait Times</h1>
+  <p id="updated-line">Loading data…</p>
+</header>
+
+<div class="wrap">
+
+  <div class="banner" id="sample-banner">
+    Showing sample/placeholder data. Run <code>fetch_panama_wait_times.py</code>
+    with your Vortexa API key and serve this file alongside the resulting
+    <code>panama_wait_times.json</code> to see live figures.
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h2>Average wait time by DWT band and direction</h2>
+    <div class="chart-box"><canvas id="waitChart" height="260"></canvas></div>
+  </section>
+
+  <section>
+    <h2>Weekly average wait time — past year</h2>
+    <p class="section-sub">Each point is the average wait time for transits that entered the canal that week (Mon–Sun).</p>
+    <canvas id="weeklyChart" height="110"></canvas>
+  </section>
+
+  <section>
+    <h2>5-year seasonal range vs. past year</h2>
+    <p class="section-sub">Shaded band = min–max average weekly wait across the prior 4 years, by week of year. Dotted line = 4-year average. Solid line = the past year, so you can see where it sits relative to history.</p>
+    <div id="seasonal-charts"></div>
+  </section>
+
+  <section>
+    <h2>Vessels currently in queue (88k / 95k DWT bands)</h2>
+    <div id="queue-table"></div>
+  </section>
+
+</div>
+
+<footer>Source: Vortexa Canal Transit dataset · Braemar plc — LNG Desk</footer>
+
+<script>
+// ---------------------------------------------------------------------
+// Sample/placeholder data, shaped exactly like panama_wait_times.json
+// so this file renders something useful before you have a live pull.
+// Replace by fetching the real JSON file (see loadData() below).
+// ---------------------------------------------------------------------
+const SAMPLE_DATA = {
+  generated_at_utc: new Date().toISOString(),
+  lookback_days: 90,
+  dwt_bands: {
+    "88k DWT LNG": {
+      dwt_range: [86000, 90000],
+      n_transits: 14,
+      avg_wait_days: 2.3,
+      avg_wait_hours: 55.2,
+      by_direction: {
+        Northbound: { n_transits: 7, avg_wait_days: 1.9, avg_wait_hours: 45.6 },
+        Southbound: { n_transits: 7, avg_wait_days: 2.7, avg_wait_hours: 64.8 }
+      }
+    },
+    "95k DWT LNG": {
+      dwt_range: [93000, 97000],
+      n_transits: 11,
+      avg_wait_days: 3.1,
+      avg_wait_hours: 74.4,
+      by_direction: {
+        Northbound: { n_transits: 5, avg_wait_days: 2.6, avg_wait_hours: 62.4 },
+        Southbound: { n_transits: 6, avg_wait_days: 3.5, avg_wait_hours: 84.0 }
+      }
+    }
+  },
+  current_queue: [
+    { vessel_name: "SAMPLE LNG CARRIER I", vessel_imo: 9000001, vessel_dead_weight: 87650, direction: "Northbound", lock: "Neopanamax", hours_waiting_so_far: 38.5 },
+    { vessel_name: "SAMPLE LNG CARRIER II", vessel_imo: 9000002, vessel_dead_weight: 95210, direction: "Southbound", lock: "Neopanamax", hours_waiting_so_far: 61.2 }
+  ],
+  weekly_history: {} // filled in below by buildSampleWeeklyHistory()
+};
+
+// Generate 52 weeks of illustrative weekly averages so the trend chart has
+// something to show before real panama_wait_times.json data exists. This
+// is NOT real Vortexa data — it's a smooth synthetic series with a mild
+// upward drift + noise, just to preview the chart shape.
+function buildSampleWeeklyHistory(){
+  const bands = { "88k DWT LNG": 2.2, "95k DWT LNG": 2.9 };
+  const history = {};
+  const today = new Date();
+
+  Object.entries(bands).forEach(([label, baseline]) => {
+    const weeks = [];
+    for(let i = 51; i >= 0; i--){
+      const weekStart = new Date(today);
+      weekStart.setDate(today.getDate() - i * 7);
+      const seasonal = 0.6 * Math.sin((51 - i) / 52 * Math.PI * 2);
+      const noise = (Math.sin(i * 12.9898) * 43758.5453 % 1) * 1.1 - 0.55;
+      const avg = Math.max(0.5, baseline + seasonal + noise);
+      weeks.push({
+        week_start: weekStart.toISOString().slice(0,10),
+        n_transits: 2 + Math.round(Math.abs(noise) * 3),
+        avg_wait_days: Math.round(avg * 100) / 100,
+        by_direction: {}
+      });
+    }
+    history[label] = weeks;
+  });
+  return history;
+}
+SAMPLE_DATA.weekly_history = buildSampleWeeklyHistory();
+
+// Generate a synthetic 5-year seasonal range (min/max/avg per week-of-year)
+// per band, again purely illustrative until real panama_wait_times.json
+// data is available.
+function buildSampleSeasonalRange(){
+  const bands = { "88k DWT LNG": 2.2, "95k DWT LNG": 2.9 };
+  const seasonal = {};
+
+  Object.entries(bands).forEach(([label, baseline]) => {
+    const weeks = [];
+    for(let wk = 1; wk <= 52; wk++){
+      const seasonalShape = 0.7 * Math.sin(wk / 52 * Math.PI * 2 - Math.PI/2) + 0.4 * Math.sin(wk / 52 * Math.PI * 4);
+      const center = Math.max(0.6, baseline + seasonalShape);
+      const spread = 0.6 + 0.4 * Math.abs(Math.sin(wk * 0.3));
+      weeks.push({
+        week_of_year: wk,
+        n_years: 4,
+        min_days: Math.round(Math.max(0.3, center - spread) * 100) / 100,
+        max_days: Math.round((center + spread) * 100) / 100,
+        avg_days: Math.round(center * 100) / 100,
+      });
+    }
+    seasonal[label] = weeks;
+  });
+  return seasonal;
+}
+SAMPLE_DATA.seasonal_range = buildSampleSeasonalRange();
+
+let waitChart;
+let weeklyChart;
+
+function fmtUpdated(iso, isSample){
+  const d = new Date(iso);
+  const stamp = d.toUTCString().replace(" GMT", " UTC");
+  return isSample ? `Sample generated ${stamp}` : `Last updated ${stamp}`;
+}
+
+function renderCards(bands){
+  const cardsEl = document.getElementById("cards");
+  cardsEl.innerHTML = "";
+  Object.entries(bands).forEach(([label, b]) => {
+    const [lo, hi] = b.dwt_range;
+    const nb = b.by_direction.Northbound || b.by_direction.northbound;
+    const sb = b.by_direction.Southbound || b.by_direction.southbound;
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `
+      <h3>${label}</h3>
+      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_transits} transits in window</div>
+      <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
+      <div class="dir-row">
+        <div><span class="badge nb">N/B</span><b>${nb ? nb.avg_wait_days + "d" : "–"}</b></div>
+        <div><span class="badge sb">S/B</span><b>${sb ? sb.avg_wait_days + "d" : "–"}</b></div>
+      </div>
+    `;
+    cardsEl.appendChild(card);
+  });
+}
+
+function renderChart(bands){
+  const labels = Object.keys(bands);
+  const nbData = labels.map(l => {
+    const d = bands[l].by_direction.Northbound || bands[l].by_direction.northbound;
+    return d ? d.avg_wait_days : 0;
+  });
+  const sbData = labels.map(l => {
+    const d = bands[l].by_direction.Southbound || bands[l].by_direction.southbound;
+    return d ? d.avg_wait_days : 0;
+  });
+
+  const ctx = document.getElementById("waitChart");
+  if(waitChart) waitChart.destroy();
+  waitChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        { label: "Northbound", data: nbData, backgroundColor: "#0f9a92" },
+        { label: "Southbound", data: sbData, backgroundColor: "#123a63" }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position: "bottom" } },
+      scales: {
+        y: { beginAtZero: true, title: { display: true, text: "Average wait (days)" } }
+      }
+    }
+  });
+}
+
+const BAND_COLORS = ["#0f9a92", "#123a63", "#c0552b", "#7a5cc0"];
+
+function renderWeeklyChart(weeklyHistory){
+  const canvas = document.getElementById("weeklyChart");
+  if(!weeklyHistory || !Object.keys(weeklyHistory).length){
+    canvas.parentElement.innerHTML = `<div class="empty">No weekly history available yet.</div>`;
+    return;
+  }
+
+  // Union of all week_start labels across bands, sorted chronologically
+  const allWeeks = new Set();
+  Object.values(weeklyHistory).forEach(weeks => weeks.forEach(w => allWeeks.add(w.week_start)));
+  const labels = Array.from(allWeeks).sort();
+
+  const datasets = Object.entries(weeklyHistory).map(([label, weeks], i) => {
+    const byWeek = Object.fromEntries(weeks.map(w => [w.week_start, w.avg_wait_days]));
+    return {
+      label,
+      data: labels.map(wk => byWeek[wk] ?? null),
+      spanGaps: true,
+      borderColor: BAND_COLORS[i % BAND_COLORS.length],
+      backgroundColor: BAND_COLORS[i % BAND_COLORS.length],
+      tension: 0.3,
+      pointRadius: 2,
+      borderWidth: 2,
+    };
+  });
+
+  if(weeklyChart) weeklyChart.destroy();
+  weeklyChart = new Chart(canvas, {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "bottom" } },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 0,
+            autoSkip: true,
+            maxTicksLimit: 12,
+          }
+        },
+        y: { beginAtZero: true, title: { display: true, text: "Average wait (days)" } }
+      }
+    }
+  });
+}
+
+let seasonalCharts = [];
+
+function renderSeasonalCharts(seasonalRange, weeklyHistory){
+  const container = document.getElementById("seasonal-charts");
+  seasonalCharts.forEach(c => c.destroy());
+  seasonalCharts = [];
+  container.innerHTML = "";
+
+  if(!seasonalRange || !Object.keys(seasonalRange).length){
+    container.innerHTML = `<div class="empty">Not enough history yet to build a 5-year range (need data older than the past year).</div>`;
+    return;
+  }
+
+  Object.entries(seasonalRange).forEach(([label, weeks], i) => {
+    if(!weeks.length) return;
+
+    const wrap = document.createElement("div");
+    wrap.style.marginBottom = "28px";
+    wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>
+      <canvas></canvas>`;
+    container.appendChild(wrap);
+    const canvas = wrap.querySelector("canvas");
+
+    const weekNums = weeks.map(w => w.week_of_year);
+    const minSeries = weeks.map(w => w.min_days);
+    const maxSeries = weeks.map(w => w.max_days);
+    const avgSeries = weeks.map(w => w.avg_days);
+
+    // Align past-year series onto the same week-of-year x-axis
+    const pastYearWeeks = (weeklyHistory && weeklyHistory[label]) || [];
+    const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [w.week_of_year, w.avg_wait_days]));
+    const pastYearSeries = weekNums.map(wk => pastYearByWeek[wk] ?? null);
+
+    const color = BAND_COLORS[i % BAND_COLORS.length];
+
+    const chart = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: weekNums.map(w => "Wk " + w),
+        datasets: [
+          {
+            label: "5-yr min",
+            data: minSeries,
+            borderWidth: 0,
+            pointRadius: 0,
+            fill: false,
+            order: 4,
+          },
+          {
+            label: "5-yr range (min–max)",
+            data: maxSeries,
+            borderWidth: 0,
+            pointRadius: 0,
+            backgroundColor: color + "26", // ~15% opacity band fill
+            fill: "-1",
+            order: 3,
+          },
+          {
+            label: "5-yr average",
+            data: avgSeries,
+            borderColor: "#9aa7b2",
+            borderDash: [4, 3],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false,
+            order: 2,
+          },
+          {
+            label: "Past year",
+            data: pastYearSeries,
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: 2.5,
+            pointRadius: 1.5,
+            spanGaps: true,
+            fill: false,
+            order: 1,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "bottom", labels: { filter: (item) => item.text !== "5-yr min" } } },
+        scales: {
+          x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 13 } },
+          y: { beginAtZero: true, title: { display: true, text: "Average wait (days)" } },
+        },
+      },
+    });
+    seasonalCharts.push(chart);
+  });
+}
+
+function renderQueue(queue){
+  const el = document.getElementById("queue-table");
+  if(!queue || !queue.length){
+    el.innerHTML = `<div class="empty">No vessels currently in queue within the tracked DWT bands.</div>`;
+    return;
+  }
+  const rows = queue.map(v => `
+    <tr>
+      <td>${v.vessel_name ?? "–"}</td>
+      <td>${v.vessel_imo ?? "–"}</td>
+      <td>${v.vessel_dead_weight ? v.vessel_dead_weight.toLocaleString() : "–"}</td>
+      <td>${v.direction ?? "–"}</td>
+      <td>${v.lock ?? "–"}</td>
+      <td>${v.hours_waiting_so_far ? (v.hours_waiting_so_far/24).toFixed(1) + "d" : "–"}</td>
+    </tr>
+  `).join("");
+  el.innerHTML = `
+    <table>
+      <thead>
+        <tr><th>Vessel</th><th>IMO</th><th>DWT</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function render(data, isSample){
+  document.getElementById("updated-line").textContent = fmtUpdated(data.generated_at_utc, isSample);
+  document.getElementById("sample-banner").style.display = isSample ? "block" : "none";
+  renderCards(data.dwt_bands);
+  renderChart(data.dwt_bands);
+  renderWeeklyChart(data.weekly_history);
+  renderSeasonalCharts(data.seasonal_range, data.weekly_history);
+  renderQueue(data.current_queue);
+}
+
+async function loadData(){
+  try{
+    const res = await fetch("panama_wait_times.json", { cache: "no-store" });
+    if(!res.ok) throw new Error("not found");
+    const data = await res.json();
+    render(data, false);
+  }catch(err){
+    // Fall back to sample data — expected until the Python script has
+    // been run and panama_wait_times.json is served alongside this file.
+    render(SAMPLE_DATA, true);
+  }
+}
+
+loadData();
+</script>
+
+</body>
+</html>
