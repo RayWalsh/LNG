@@ -35,11 +35,6 @@ confirms the `CanalTransitRecord` field names (`vessel_dead_weight`,
 `queue_arrival_time`, `canal_entry_time`, `canal`, `lock`, `direction`,
 etc.) but NOT:
 
-- whether `CanalTransit` is the exact importable class name in the
-  version of `vortexasdk` that gets installed
-- the exact keyword arguments `CanalTransit().search()` accepts beyond
-  `filter_time_min` / `filter_time_max` (which are a safe bet — every
-  other endpoint in the SDK uses them)
 - whether a ~5-year pull in one call is supported, or needs to be chunked
   into yearly requests and concatenated (check for pagination behavior /
   row limits in the Actions log — if `to_df()` silently truncates around
@@ -47,8 +42,12 @@ etc.) but NOT:
 - whether the connected Vortexa account/plan actually includes
   canal-transit-level data at all (vs. only cargo movements)
 
-Verified from Actions run 32489219895:
+Verified from Actions runs 32489219895 and 32497092728:
 
+- `CanalTransit` is importable from `vortexasdk==1.0.29`.
+- `CanalTransit.search()` uses timestamp-specific filters, including
+  `filter_queue_arrival_time_min` and `filter_queue_arrival_time_max`;
+  it does not accept generic `filter_time_min` / `filter_time_max`.
 - `vortexasdk==1.0.29` imports the `packaging` module but does not
   install it as a transitive dependency. Keep `packaging` explicitly
   listed in `requirements.txt`.
