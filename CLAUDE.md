@@ -47,6 +47,12 @@ etc.) but NOT:
 - whether the connected Vortexa account/plan actually includes
   canal-transit-level data at all (vs. only cargo movements)
 
+Verified from Actions run 32489219895:
+
+- `vortexasdk==1.0.29` imports the `packaging` module but does not
+  install it as a transitive dependency. Keep `packaging` explicitly
+  listed in `requirements.txt`.
+
 When you get real signal on any of these (from an Actions run log, or
 from the user pasting back an error), fix the script AND update this
 section of CLAUDE.md with what's actually true, so the next session
