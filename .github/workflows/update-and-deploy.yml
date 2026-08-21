@@ -38,9 +38,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Inspect CanalTransit search signature
-        run: python3 -c "import inspect; from vortexasdk import CanalTransit; print(inspect.signature(CanalTransit().search))"
-
       - name: Fetch latest Panama Canal wait-time data
         env:
           VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
