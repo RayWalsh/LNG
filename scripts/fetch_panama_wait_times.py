@@ -40,18 +40,10 @@ record (confirmed via the SDK's entity docs):
     voyage_status, cargoes, origin, destination, charterer,
     effective_controller
 
-What was NOT confirmed at time of writing is the exact set of server-side
-search() filter kwargs (e.g. whether it's filter_canals=, filter_locks=,
-filter_vessel_classes=, etc.) — the docs page for this specific endpoint
-sits behind Vortexa's authenticated docs site. So this script plays it
-safe: it only relies on the near-universal filter_time_min / filter_time_max
-kwargs (used across every other Vortexa endpoint), pulls a broad window,
-and does all the Panama / DWT-band / direction filtering locally in
-pandas using the confirmed field names above.
-
-If you want to push more filtering server-side (smaller payload, faster),
-run this first to see the real signature and adjust fetch_canal_transits():
-    python3 -c "from vortexasdk import CanalTransit; help(CanalTransit().search)"
+The installed vortexasdk 1.0.29 signature was verified in GitHub Actions.
+This script anchors the broad lookback window on queue_arrival_time, which
+includes both completed transits and vessels that are still waiting. Panama,
+DWT-band, and direction filtering remains local in pandas.
 """
 
 import os
@@ -106,8 +98,8 @@ def fetch_canal_transits(days_back: int = LOOKBACK_DAYS) -> pd.DataFrame:
     time_min = time_max - timedelta(days=days_back)
 
     search_result = CanalTransit().search(
-        filter_time_min=time_min,
-        filter_time_max=time_max,
+        filter_queue_arrival_time_min=time_min,
+        filter_queue_arrival_time_max=time_max,
     )
 
     df = search_result.to_df()
