@@ -10,6 +10,7 @@ on:
     paths:
       - "scripts/**"
       - "site/**"
+      - "requirements.txt"
       - ".github/workflows/update-and-deploy.yml"
   workflow_dispatch: {}   # lets you trigger a manual run from the Actions tab
 
@@ -36,6 +37,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Inspect CanalTransit search signature
+        run: python3 -c "import inspect; from vortexasdk import CanalTransit; print(inspect.signature(CanalTransit().search))"
 
       - name: Fetch latest Panama Canal wait-time data
         env:
