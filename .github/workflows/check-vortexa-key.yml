@@ -1,0 +1,25 @@
+name: Check Vortexa API key
+ 
+# Manual-only — trigger from the Actions tab. This is a throwaway
+# diagnostic, not part of the real pipeline. Delete this file (or just
+# stop using it) once you've confirmed the key works.
+ 
+on:
+  workflow_dispatch: {}
+ 
+jobs:
+  check-key:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+ 
+      - name: Install Vortexa SDK
+        run: pip install vortexasdk
+ 
+      - name: Verify API key
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python -m vortexasdk.check_setup
