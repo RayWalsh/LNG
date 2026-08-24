@@ -27,6 +27,42 @@ the GitHub web UI.
   secret) — or by asking the user to paste back the log output / error
   text (never the key itself).
 
+## Current data source (as of this pivot)
+
+**CanalTransit is NOT used.** It was the original, ideal choice but is
+confirmed denied (401/403) on this Vortexa account — verified twice
+independently, and confirmed as part of a broader denied group
+(Fixtures, Freight Pricing, Vessel Availability, EIA Forecasts,
+VesselPositions) via `scripts/audit_vortexa_access.py`. An email is
+pending with the Vortexa account team asking about that tier.
+
+The pipeline now uses **`VoyagesCongestionBreakdown`**, confirmed
+accessible and tested with real filtered pulls. Full detail — including
+several non-obvious things learned only through live testing, not from
+any documentation — is in the docstring at the top of
+`scripts/fetch_panama_wait_times.py`. Read that before changing the
+data-fetching logic. Highlights:
+
+- `locations` = the Panama Canal waypoint's Geographies ID filters TO
+  voyages congested there; `breakdown_property` only accepts
+  `"port"`/`"terminal"`/`"shipping_region"` — there's no way to get
+  "Panama Canal" itself as a result label, so results always come back
+  grouped by port and get aggregated in this script.
+- No true northbound/southbound field exists on this endpoint — the
+  dashboard shows Laden/Ballast instead, honestly labelled as such.
+- No live per-vessel queue exists on this endpoint —
+  `current_queue` is intentionally always `[]`.
+- 5-year seasonal range isn't implemented for this data source yet
+  (would cost ~250 API calls per band; not attempted).
+
+**If Vortexa grants CanalTransit access later:** switch back — check
+git history for the pre-pivot version of
+`scripts/fetch_panama_wait_times.py`, which had the full 5-year seasonal
+range and a live queue table already built. `site/index.html` would
+also need `by_status` reverted to `by_direction` (Laden/Ballast ->
+Northbound/Southbound) — search the file for `by_status` to find every
+spot that would need updating back.
+
 ## Confirmed facts (verified against a real Vortexa account, live)
 
 `scripts/fetch_panama_wait_times.py` was originally written from Vortexa's
