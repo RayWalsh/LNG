@@ -1,0 +1,29 @@
+name: Probe vessel categories and voyage history
+
+# Manual-only diagnostic. Checks (1) whether Vortexa has a native
+# Panamax/Neopanamax vessel-class taxonomy we could filter on directly,
+# and (2) whether VoyagesSearchEnriched can give a real historical
+# per-voyage list to replace the empty "Live vessel queue" section.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run probe
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/probe_categories_and_voyages.py
