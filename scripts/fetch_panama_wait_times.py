@@ -1,59 +1,77 @@
 """
-Panama Canal LNG Transit Wait Time Puller — Vortexa API
-=========================================================
+Panama Canal LNG Wait Time Puller — Vortexa API (VoyagesCongestionBreakdown)
+=============================================================================
 
-Pulls raw Panama Canal transit records from Vortexa's "Canal Transit"
-dataset, computes actual wait time per vessel (queue arrival -> canal
-entry), and produces:
-  - current average wait times for two LNG carrier DWT bands
-    (default: ~88,000 DWT and ~95,000 DWT),
-  - a week-by-week average wait time series for the past year,
-  - a 5-year seasonal range (min / max / avg per week-of-year, built from
-    the 4 years prior to the last 52 weeks) so the past year can be
-    plotted against where it historically sits, and
-  - a live snapshot of vessels currently sitting in the queue.
+IMPORTANT HISTORY — read this before touching the endpoint choice below.
 
-Output: panama_wait_times.json — consumed by panama_canal_dashboard.html
+This script originally used Vortexa's "Canal Transit" dataset
+(CanalTransit), which has exactly the fields you'd want (queue arrival
+time, canal entry time, direction, DWT). Empirically confirmed, TWICE,
+against a real account: CanalTransit returns a 401/403 permissions_error
+— it is not included in this Vortexa plan. A full account-wide audit
+(see scripts/audit_vortexa_access.py) confirmed this isn't isolated:
+CanalTransit is denied alongside the entire Fixtures / Freight Pricing /
+Vessel Availability / EIA Forecasts / VesselPositions group, suggesting
+a separate "Freight" tier this account doesn't have. An email is out to
+the Vortexa account team asking whether that tier can be added — if it
+ever is, CanalTransit is the cleaner, more precise data source and this
+script should be switched back (see git history for the old version).
+
+Until/unless that happens, this script uses VoyagesCongestionBreakdown
+instead — confirmed ACCESSIBLE and empirically tested to return
+sensible, real numbers. Key things learned about how it actually works
+(none of this is guessable from public docs, only from real testing):
+
+  - `locations` filters to voyages congested AT a given place (we pass
+    the "Panama Canal" waypoint's Geographies ID). It does NOT mean
+    "group results by this place."
+  - `breakdown_property` controls how the (already Panama-filtered)
+    results get grouped for display. The API only accepts EXACTLY
+    "port", "terminal", or "shipping_region" — confirmed via a 400
+    validation error listing the valid options. There is no "canal" or
+    "waypoint" option, so results always come back grouped by port
+    (e.g. "Sabine Pass, TX [US]"), never labelled "Panama Canal"
+    itself. This is expected, not a bug.
+  - `avg_waiting_time` (and the `_laden`/`_ballast` variants) are in
+    SECONDS.
+  - There is no separate northbound/southbound field in the response.
+    laden vs ballast is the closest available proxy (a laden LNG
+    carrier is normally the leg that matters commercially) and is
+    reported AS laden/ballast, not mislabelled as a direction.
+  - `vessel_dwt_min` / `vessel_dwt_max` ARE real, working server-side
+    filters — confirmed via real filtered pulls.
+  - This endpoint returns numbers PRE-AGGREGATED over whatever
+    time_min/time_max window you give it — there is no server-side
+    "group by week" option. Getting a weekly series means one API call
+    per week (see fetch_period() / build_weekly_history() below). This
+    is why the 5-year seasonal range from the old CanalTransit-based
+    version isn't implemented here yet — at ~250 calls per band it's
+    expensive, and this endpoint's own multi-year reliability hasn't
+    been tested yet. Revisit once weekly-over-a-year is proven stable.
+  - There is no live "who's in the queue right now" list from this
+    endpoint (that was a CanalTransit-only feature) — current_queue is
+    always empty here, honestly, rather than faked.
 
 SETUP
 -----
-This script is designed to run inside GitHub Actions (see
-.github/workflows/update-and-deploy.yml), not on a local machine. The
-Vortexa API key lives ONLY as a GitHub Actions repository secret
-(Settings -> Secrets and variables -> Actions -> New repository secret,
-named VORTEXA_API_KEY) — it is never committed, never put in a local
-.env file, and never typed into a Claude Code chat session (Claude
-Code's cloud sessions have no secrets store).
+Runs inside GitHub Actions (see .github/workflows/update-and-deploy.yml).
+VORTEXA_API_KEY lives ONLY as a GitHub Actions repository secret.
 
-To run it manually on your own machine for debugging instead, you'd do:
-    pip install vortexasdk pandas
+To run manually for debugging:
+    pip install vortexasdk packaging pandas
     export VORTEXA_API_KEY="your-key-here"
     python3 scripts/fetch_panama_wait_times.py
-
-NOTE ON FILTERS
-----------------
-The Vortexa "Canal Transit" endpoint definitely exposes these fields per
-record (confirmed via the SDK's entity docs):
-    vessel_id, vessel_name, vessel_imo, vessel_mmsi, vessel_class,
-    vessel_cubic_capacity, vessel_dead_weight, canal, direction, lock,
-    queue_arrival_time, canal_entry_time, canal_exit_time, booked_time,
-    voyage_status, cargoes, origin, destination, charterer,
-    effective_controller
-
-The installed vortexasdk 1.0.29 signature was verified in GitHub Actions.
-This script anchors the broad lookback window on queue_arrival_time, which
-includes both completed transits and vessels that are still waiting. Panama,
-DWT-band, and direction filtering remains local in pandas.
 """
 
 import os
 import json
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 
 try:
-    from vortexasdk import CanalTransit
+    from vortexasdk import Geographies, VoyagesCongestionBreakdown
 except ImportError as e:
     raise SystemExit(
         "vortexasdk not installed. Run: pip install vortexasdk\n"
@@ -61,269 +79,161 @@ except ImportError as e:
     )
 
 # ---------------------------------------------------------------------------
-# CONFIG — adjust as needed
+# CONFIG
 # ---------------------------------------------------------------------------
 
-LOOKBACK_DAYS = 1830  # ~5 years, with a little slack for week-boundary trimming
-
-# The most recent PAST_YEAR_DAYS days are treated as "the past year" (shown
-# as its own overlay line). Everything older than that, back to
-# LOOKBACK_DAYS, forms the historical band used to compute the 5-year
-# min/max/avg per week-of-year.
-PAST_YEAR_DAYS = 364  # exactly 52 weeks
-
-# DWT bands to report on. Bands have some width around the target DWT
-# because AIS/registry DWT figures for sister ships vary slightly and a
-# single exact-DWT filter would return almost nothing.
 DWT_BANDS = {
     "88k DWT LNG": (86_000, 90_000),
     "95k DWT LNG": (93_000, 97_000),
 }
 
-# Which timestamp anchors a transit to a given week/year. canal_entry_time
-# = the week the vessel actually got through (most common convention for
-# "how bad was congestion that week"). Swap to queue_arrival_time if you'd
-# rather bucket by when the wait started.
-WEEKLY_ANCHOR_COLUMN = "canal_entry_time"
+CURRENT_WINDOW_DAYS = 30   # window used for the "current average wait" cards
+WEEKLY_HISTORY_WEEKS = 52  # how many past weeks to build a trend line for
+
+# Small pause between API calls in the weekly-history loop (it makes
+# ~1 call per week per band — be a little gentle rather than hammering
+# the API in a tight loop).
+CALL_DELAY_SECONDS = 0.2
 
 OUTPUT_JSON = os.environ.get("OUTPUT_JSON_PATH", "site/panama_wait_times.json")
 
 
 # ---------------------------------------------------------------------------
-# 1. Pull raw canal transit records from Vortexa
+# 1. Find the "Panama Canal" waypoint's Geographies ID
 # ---------------------------------------------------------------------------
 
-def fetch_canal_transits(days_back: int = LOOKBACK_DAYS) -> pd.DataFrame:
-    time_max = datetime.utcnow()
-    time_min = time_max - timedelta(days=days_back)
+def find_panama_canal_id() -> str:
+    df = Geographies().search(term="panama").to_df()
+    exact = df[df["name"] == "Panama Canal"]
+    if len(exact):
+        return exact.iloc[0]["id"]
 
-    search_result = CanalTransit().search(
-        filter_queue_arrival_time_min=time_min,
-        filter_queue_arrival_time_max=time_max,
+    canal_like = df[df["name"].str.lower().str.contains("canal", na=False)]
+    if len(canal_like):
+        return canal_like.iloc[0]["id"]
+
+    raise RuntimeError(
+        "Could not find a 'Panama Canal' waypoint via Geographies search — "
+        "Vortexa may have renamed it. Run scripts/probe_congestion_breakdown.py "
+        "to re-check what Panama-related geographies currently exist."
     )
 
-    df = search_result.to_df()
-    return df
-
 
 # ---------------------------------------------------------------------------
-# 2. Filter to Panama, compute wait time per vessel transit
+# 2. Fetch + aggregate one time window, for one DWT band
 # ---------------------------------------------------------------------------
 
-def compute_wait_times(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-
-    if "canal" in df.columns:
-        df = df[df["canal"].astype(str).str.contains("panama", case=False, na=False)]
-
-    for col in ["queue_arrival_time", "canal_entry_time", "canal_exit_time", "booked_time"]:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce", utc=True)
-
-    df["wait_time_hours"] = (
-        df["canal_entry_time"] - df["queue_arrival_time"]
-    ).dt.total_seconds() / 3600
-
-    # Keep only transits where we can actually compute a completed wait
-    df = df[df["wait_time_hours"].notna() & (df["wait_time_hours"] >= 0)]
-
-    return df
+def fetch_period(panama_id: str, dwt_min: int, dwt_max: int,
+                  time_min: datetime, time_max: datetime) -> pd.DataFrame:
+    """One call to VoyagesCongestionBreakdown for a given window/band.
+    Returns the raw (port-level) rows — may be empty if nothing matched."""
+    try:
+        return VoyagesCongestionBreakdown().search(
+            time_min=time_min,
+            time_max=time_max,
+            locations=panama_id,
+            vessel_dwt_min=dwt_min,
+            vessel_dwt_max=dwt_max,
+        ).to_df()
+    except Exception as e:  # noqa: BLE001 - log and treat as "no data" rather than crash
+        print(f"    (call failed for {time_min.date()}–{time_max.date()}: {e})")
+        return pd.DataFrame()
 
 
-# ---------------------------------------------------------------------------
-# 3. Slice by DWT band and direction, aggregate
-# ---------------------------------------------------------------------------
+def aggregate_wait(df: pd.DataFrame) -> dict:
+    """
+    VoyagesCongestionBreakdown returns one row PER PORT (grouped by
+    origin/discharge port, not by canal — see module docstring). This
+    collapses those port-level rows into a single vessel-count-weighted
+    average, both overall and split laden/ballast.
+    """
+    empty = {
+        "n_voyages": 0,
+        "avg_wait_days": None,
+        "by_status": {},  # "Laden" / "Ballast" — see module docstring
+    }
+    if df is None or not len(df) or "avg_waiting_time" not in df.columns:
+        return empty
 
-def summarise_by_band(df: pd.DataFrame) -> dict:
-    results = {}
+    total_vessels = int(df["vessel_count"].sum())
+    if total_vessels == 0:
+        return empty
 
-    for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
-        band_df = df[
-            df["vessel_dead_weight"].notna()
-            & (df["vessel_dead_weight"] >= dwt_min)
-            & (df["vessel_dead_weight"] <= dwt_max)
-        ]
+    weighted_seconds = (df["avg_waiting_time"] * df["vessel_count"]).sum() / total_vessels
+    result = {
+        "n_voyages": total_vessels,
+        "avg_wait_days": round(float(weighted_seconds) / 86400, 2),
+        "by_status": {},
+    }
 
-        band_summary = {
-            "dwt_range": [dwt_min, dwt_max],
-            "n_transits": int(len(band_df)),
-            "avg_wait_hours": None,
-            "avg_wait_days": None,
-            "by_direction": {},
+    for status in ["laden", "ballast"]:
+        n_col, w_col = f"vessel_count_{status}", f"avg_waiting_time_{status}"
+        if n_col not in df.columns or w_col not in df.columns:
+            continue
+        n = int(df[n_col].sum())
+        if n == 0:
+            continue
+        weighted = (df[w_col] * df[n_col]).sum() / n
+        result["by_status"][status.capitalize()] = {
+            "n_voyages": n,
+            "avg_wait_days": round(float(weighted) / 86400, 2),
         }
 
-        if len(band_df):
-            band_summary["avg_wait_hours"] = round(float(band_df["wait_time_hours"].mean()), 1)
-            band_summary["avg_wait_days"] = round(float(band_df["wait_time_hours"].mean()) / 24, 2)
-
-            for direction, dgroup in band_df.groupby("direction"):
-                band_summary["by_direction"][str(direction)] = {
-                    "n_transits": int(len(dgroup)),
-                    "avg_wait_hours": round(float(dgroup["wait_time_hours"].mean()), 1),
-                    "avg_wait_days": round(float(dgroup["wait_time_hours"].mean()) / 24, 2),
-                }
-
-        results[band_label] = band_summary
-
-    return results
+    return result
 
 
 # ---------------------------------------------------------------------------
-# 4. Weekly history — average wait time per week, per band, over the window
+# 3. Current summary — one recent window, per band
 # ---------------------------------------------------------------------------
 
-def summarise_weekly(df: pd.DataFrame) -> dict:
-    """
-    Buckets the PAST YEAR of completed transits into ISO weeks (Mon-Sun,
-    labelled by the Monday of that week) and computes average wait time
-    per week, per DWT band, both combined and split by direction. Each
-    week also carries its ISO week-of-year number so the dashboard can
-    align this series against the 5-year seasonal range by week-of-year
-    rather than by calendar date. Weeks with zero transits for a band are
-    omitted rather than filled with nulls/zeros.
-    """
+def build_current_summary(panama_id: str) -> dict:
+    now = datetime.utcnow()
+    window_start = now - timedelta(days=CURRENT_WINDOW_DAYS)
+
     results = {}
-
-    if WEEKLY_ANCHOR_COLUMN not in df.columns:
-        return {label: [] for label in DWT_BANDS}
-
-    df = df.copy()
-    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=PAST_YEAR_DAYS)
-    df = df[df[WEEKLY_ANCHOR_COLUMN] >= cutoff]
-
-    df["week_start"] = (
-        df[WEEKLY_ANCHOR_COLUMN].dt.tz_convert("UTC").dt.to_period("W-SUN").dt.start_time
-    )
-    df["week_of_year"] = df[WEEKLY_ANCHOR_COLUMN].dt.isocalendar().week.astype(int)
-
     for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
-        band_df = df[
-            df["vessel_dead_weight"].notna()
-            & (df["vessel_dead_weight"] >= dwt_min)
-            & (df["vessel_dead_weight"] <= dwt_max)
-        ]
-
-        weeks = []
-        for week_start, wgroup in band_df.groupby("week_start"):
-            entry = {
-                "week_start": week_start.date().isoformat(),
-                "week_of_year": int(wgroup["week_of_year"].iloc[0]),
-                "n_transits": int(len(wgroup)),
-                "avg_wait_days": round(float(wgroup["wait_time_hours"].mean()) / 24, 2),
-                "by_direction": {},
-            }
-            for direction, dgroup in wgroup.groupby("direction"):
-                entry["by_direction"][str(direction)] = {
-                    "n_transits": int(len(dgroup)),
-                    "avg_wait_days": round(float(dgroup["wait_time_hours"].mean()) / 24, 2),
-                }
-            weeks.append(entry)
-
-        weeks.sort(key=lambda w: w["week_start"])
-        results[band_label] = weeks
+        df = fetch_period(panama_id, dwt_min, dwt_max, window_start, now)
+        agg = aggregate_wait(df)
+        results[band_label] = {
+            "dwt_range": [dwt_min, dwt_max],
+            "window_days": CURRENT_WINDOW_DAYS,
+            **agg,
+        }
+        time.sleep(CALL_DELAY_SECONDS)
 
     return results
 
 
 # ---------------------------------------------------------------------------
-# 4b. 5-year seasonal range — min/max/avg per week-of-year, prior 4 years
+# 4. Weekly history — one call per week, per band (see module docstring
+#    for why this can't be done in a single server-side call)
 # ---------------------------------------------------------------------------
 
-def summarise_seasonal_range(df: pd.DataFrame) -> dict:
-    """
-    Uses everything OLDER than the past year (i.e. roughly years 2-5 back)
-    to build a min/max/avg band per ISO week-of-year, so the dashboard can
-    shade "the historical range for this week" and plot the past year's
-    actual value against it.
+def build_weekly_history(panama_id: str) -> dict:
+    now = datetime.utcnow()
+    results = {label: [] for label in DWT_BANDS}
 
-    Method: first compute each (year, week-of-year)'s own average wait
-    time (so one outlier vessel doesn't skew a whole 5-year band), then
-    take the min/max/avg of those yearly week-values across however many
-    years of history are available for that week number.
-    """
-    results = {}
+    for week_index in range(WEEKLY_HISTORY_WEEKS):
+        week_end = now - timedelta(weeks=week_index)
+        week_start = week_end - timedelta(days=7)
 
-    if WEEKLY_ANCHOR_COLUMN not in df.columns:
-        return {label: [] for label in DWT_BANDS}
+        for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
+            df = fetch_period(panama_id, dwt_min, dwt_max, week_start, week_end)
+            agg = aggregate_wait(df)
+            if agg["avg_wait_days"] is not None:
+                results[band_label].append({
+                    "week_start": week_start.date().isoformat(),
+                    "week_of_year": week_start.isocalendar()[1],
+                    "n_voyages": agg["n_voyages"],
+                    "avg_wait_days": agg["avg_wait_days"],
+                    "by_status": agg["by_status"],
+                })
+            time.sleep(CALL_DELAY_SECONDS)
 
-    df = df.copy()
-    cutoff = pd.Timestamp.utcnow() - pd.Timedelta(days=PAST_YEAR_DAYS)
-    df = df[df[WEEKLY_ANCHOR_COLUMN] < cutoff]
-
-    iso = df[WEEKLY_ANCHOR_COLUMN].dt.isocalendar()
-    df["iso_year"] = iso.year.astype(int)
-    df["week_of_year"] = iso.week.astype(int)
-
-    for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
-        band_df = df[
-            df["vessel_dead_weight"].notna()
-            & (df["vessel_dead_weight"] >= dwt_min)
-            & (df["vessel_dead_weight"] <= dwt_max)
-        ]
-
-        # Step 1: average wait time per (iso_year, week_of_year)
-        per_year_week = (
-            band_df.groupby(["iso_year", "week_of_year"])["wait_time_hours"]
-            .mean()
-            .reset_index()
-        )
-        per_year_week["avg_wait_days"] = per_year_week["wait_time_hours"] / 24
-
-        # Step 2: min/max/avg of those yearly values, per week_of_year
-        weeks = []
-        for wk, wgroup in per_year_week.groupby("week_of_year"):
-            weeks.append({
-                "week_of_year": int(wk),
-                "n_years": int(wgroup["iso_year"].nunique()),
-                "min_days": round(float(wgroup["avg_wait_days"].min()), 2),
-                "max_days": round(float(wgroup["avg_wait_days"].max()), 2),
-                "avg_days": round(float(wgroup["avg_wait_days"].mean()), 2),
-            })
-
-        weeks.sort(key=lambda w: w["week_of_year"])
-        results[band_label] = weeks
+    for label in results:
+        results[label].sort(key=lambda w: w["week_start"])
 
     return results
-
-
-# ---------------------------------------------------------------------------
-# 5. Live snapshot: vessels currently sitting in the queue (any DWT)
-# ---------------------------------------------------------------------------
-
-def current_queue_snapshot(df: pd.DataFrame) -> list:
-    """Vessels that have joined the queue but not yet entered the canal,
-    restricted to the two DWT bands so the dashboard table stays focused."""
-    if "queue_arrival_time" not in df.columns or "canal_entry_time" not in df.columns:
-        return []
-
-    waiting = df[
-        df["queue_arrival_time"].notna() & df["canal_entry_time"].isna()
-    ].copy()
-
-    if "vessel_dead_weight" in waiting.columns:
-        lo = min(v[0] for v in DWT_BANDS.values())
-        hi = max(v[1] for v in DWT_BANDS.values())
-        waiting = waiting[
-            waiting["vessel_dead_weight"].notna()
-            & (waiting["vessel_dead_weight"] >= lo)
-            & (waiting["vessel_dead_weight"] <= hi)
-        ]
-
-    waiting["hours_waiting_so_far"] = (
-        pd.Timestamp.utcnow() - waiting["queue_arrival_time"]
-    ).dt.total_seconds() / 3600
-
-    cols = [
-        "vessel_name", "vessel_imo", "vessel_dead_weight",
-        "direction", "lock", "queue_arrival_time", "hours_waiting_so_far",
-    ]
-    cols = [c for c in cols if c in waiting.columns]
-
-    return (
-        waiting[cols]
-        .sort_values("hours_waiting_so_far", ascending=False)
-        .to_dict("records")
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -337,26 +247,36 @@ def main():
             "Find your key in your Vortexa account / API settings."
         )
 
-    print("Pulling Panama Canal transit records from Vortexa...")
-    raw = fetch_canal_transits()
-    print(f"  {len(raw)} raw records pulled")
+    print("Finding Panama Canal waypoint ID via Geographies...")
+    panama_id = find_panama_canal_id()
+    print(f"  Using location ID: {panama_id}")
 
-    processed = compute_wait_times(raw)
-    print(f"  {len(processed)} completed transits with a computable wait time")
+    print(f"\nBuilding current summary (trailing {CURRENT_WINDOW_DAYS} days)...")
+    current_summary = build_current_summary(panama_id)
 
-    band_summary = summarise_by_band(processed)
-    weekly_history = summarise_weekly(processed)
-    seasonal_range = summarise_seasonal_range(processed)
-    queue_now = current_queue_snapshot(raw)
+    print(f"\nBuilding weekly history ({WEEKLY_HISTORY_WEEKS} weeks — "
+          f"this makes ~{WEEKLY_HISTORY_WEEKS * len(DWT_BANDS)} API calls, may take a few minutes)...")
+    weekly_history = build_weekly_history(panama_id)
 
     output = {
         "generated_at_utc": datetime.utcnow().isoformat() + "Z",
-        "lookback_days": LOOKBACK_DAYS,
-        "past_year_days": PAST_YEAR_DAYS,
-        "dwt_bands": band_summary,
+        "data_source": "vortexa_voyages_congestion_breakdown",
+        "notes": (
+            "CanalTransit (the ideal dataset) is not accessible on this "
+            "Vortexa account (confirmed 401/403). This data instead comes "
+            "from VoyagesCongestionBreakdown filtered to the Panama Canal "
+            "waypoint. 'Laden'/'Ballast' is used instead of a true "
+            "northbound/southbound direction, since this endpoint doesn't "
+            "expose one. There is no live vessel-queue list from this "
+            "endpoint (current_queue is intentionally always empty). "
+            "5-year seasonal range is not yet implemented for this data "
+            "source — see script docstring for why."
+        ),
+        "current_window_days": CURRENT_WINDOW_DAYS,
+        "dwt_bands": current_summary,
         "weekly_history": weekly_history,
-        "seasonal_range": seasonal_range,
-        "current_queue": queue_now,
+        "seasonal_range": {label: [] for label in DWT_BANDS},  # not yet implemented, see docstring
+        "current_queue": [],  # not available from this data source, see docstring
     }
 
     os.makedirs(os.path.dirname(OUTPUT_JSON) or ".", exist_ok=True)
@@ -364,18 +284,15 @@ def main():
         json.dump(output, f, indent=2, default=str)
 
     print(f"\nWrote {OUTPUT_JSON}")
-    for label, summary in band_summary.items():
+    for label, summary in current_summary.items():
         lo, hi = summary["dwt_range"]
         print(f"\n{label} ({lo:,}-{hi:,} DWT)")
-        print(f"  Transits in window: {summary['n_transits']}")
-        print(f"  Avg wait: {summary['avg_wait_days']} days ({summary['avg_wait_hours']} hrs)")
-        for direction, d in summary["by_direction"].items():
-            print(f"    {direction}: {d['avg_wait_days']} days over {d['n_transits']} transits")
+        print(f"  Voyages in trailing {CURRENT_WINDOW_DAYS}d: {summary['n_voyages']}")
+        print(f"  Avg wait: {summary['avg_wait_days']} days")
+        for status, d in summary["by_status"].items():
+            print(f"    {status}: {d['avg_wait_days']} days over {d['n_voyages']} voyages")
         n_weeks = len(weekly_history.get(label, []))
-        n_seasonal_weeks = len(seasonal_range.get(label, []))
-        max_years = max((w["n_years"] for w in seasonal_range.get(label, [])), default=0)
-        print(f"  Past-year weekly points: {n_weeks}")
-        print(f"  Seasonal range weeks covered: {n_seasonal_weeks} (up to {max_years} years of history per week)")
+        print(f"  Weekly history points with data: {n_weeks} / {WEEKLY_HISTORY_WEEKS}")
 
 
 if __name__ == "__main__":
