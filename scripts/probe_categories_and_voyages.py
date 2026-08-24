@@ -1,39 +1,22 @@
 """
-Two checks:
+Round 2: the Attributes check (round 1) confirmed Vortexa has no native
+Panamax/Neopanamax vessel-class taxonomy — "SUPER" entries found there
+were ice-class notations (BV/LR "1A Super"), unrelated to Panama Canal
+categories. So PCA's Regular/Super/Panamax Plus/Neopanamax categories
+(defined by beam/draft) can't be replicated via Vortexa's DWT-only
+filters — that path is closed.
 
-1. Does Vortexa's own vessel_class taxonomy include size-based classes
-   like "Panamax" / "Neopanamax" that we could filter on directly,
-   rather than approximating PCA's beam/draft-based categories via DWT?
-   Attributes (confirmed accessible, 94 rows) is the most likely place
-   to find this.
-
-2. Can VoyagesSearchEnriched (confirmed accessible, just needs `columns`
-   + to_list() instead of to_df()) give us a real historical per-voyage
-   list — vessel names, dates, wait time — to replace the permanently-
-   empty "Live vessel queue" section with real historical voyages?
+This script re-tests VoyagesSearchEnriched with the REAL valid column
+names — taken verbatim from the 400 validation error the API returned
+in round 1, not guessed — to see real per-voyage records including
+`waiting_time`, `waiting_commence`, `waiting_finished`, which could
+replace VoyagesCongestionBreakdown's port-level aggregation entirely
+with genuine per-vessel data.
 """
 
 from datetime import datetime, timedelta
 
-from vortexasdk import Attributes, Geographies, VoyagesSearchEnriched
-
-
-def check_vessel_class_taxonomy():
-    print("--- Attributes: looking for vessel-class / size-related entries ---")
-    df = Attributes().search().to_df()
-    print(f"{len(df)} total attributes")
-    cols = [c for c in ["id", "name", "category"] if c in df.columns]
-    print("Columns available:", list(df.columns))
-    print()
-
-    if "name" in df.columns:
-        size_like = df[df["name"].str.lower().str.contains(
-            "panamax|neopanamax|regular|super", na=False, regex=True
-        )]
-        print(f"{len(size_like)} entries matching panamax/neopanamax/regular/super:")
-        if len(size_like):
-            print(size_like[cols].to_string())
-    print()
+from vortexasdk import Geographies, VoyagesSearchEnriched
 
 
 def find_panama_canal_id():
@@ -43,41 +26,39 @@ def find_panama_canal_id():
 
 
 def check_voyages_search_enriched(panama_id):
-    print("--- VoyagesSearchEnriched: historical voyage list test ---")
+    print("--- VoyagesSearchEnriched: historical voyage list test (round 2) ---")
+    print("Using CONFIRMED valid column names from the API's own 400 error response.\n")
     now = datetime.utcnow()
-    ninety_days_ago = now - timedelta(days=90)
+    one_eighty_days_ago = now - timedelta(days=180)
 
-    # Request explicit columns so to_list() gives us clean records rather
-    # than a raw nested structure. Guessing at likely useful column names
-    # based on confirmed field names from elsewhere in the SDK — if any
-    # are wrong the API should just ignore or error on them, which will
-    # tell us the real names.
-    candidate_columns = [
-        "vessel.name", "vessel.imo", "vessel.dwt",
-        "voyage_status", "start_timestamp", "end_timestamp",
-        "vessel_wait_time",
+    # These are the REAL valid columns, taken verbatim from the API's own
+    # validation error in round 1 — not guessed.
+    real_columns = [
+        "vessel_name", "imo", "dwt", "vessel_class", "voyage_status",
+        "start_date", "end_date", "location", "congestion_port",
+        "waiting_time", "waiting_commence", "waiting_finished", "duration",
     ]
 
     try:
         result = VoyagesSearchEnriched().search(
-            time_min=ninety_days_ago,
+            time_min=one_eighty_days_ago,
             time_max=now,
             locations=panama_id,
             vessel_dwt_min=86_000,
             vessel_dwt_max=97_000,  # wide enough to cover both target bands at once
-            columns=candidate_columns,
+            columns=real_columns,
         )
-        records = result.to_list()
-        print(f"{len(records)} voyage records returned")
-        for r in records[:5]:
-            print(" ", r)
+        df = result.to_df()
+        print(f"{len(df)} voyage records returned")
+        print("Columns:", list(df.columns))
+        if len(df):
+            print(df.to_string())
     except Exception as e:  # noqa: BLE001
         print(f"ERROR ({type(e).__name__}) — {e}")
     print()
 
 
 def main():
-    check_vessel_class_taxonomy()
     panama_id = find_panama_canal_id()
     if panama_id:
         check_voyages_search_enriched(panama_id)
