@@ -1,0 +1,30 @@
+name: Audit Vortexa API access
+
+# Manual-only diagnostic. Empirically tests every read endpoint in the
+# installed vortexasdk against your actual account and reports which
+# ones are accessible vs explicitly denied. Safe to keep around for
+# future use (e.g. if your Vortexa plan changes later) or delete once
+# you've got your answer.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run access audit
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/audit_vortexa_access.py
