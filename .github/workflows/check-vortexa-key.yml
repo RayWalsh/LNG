@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
  
       - name: Install Vortexa SDK
-        run: pip install vortexasdk
+        run: pip install vortexasdk packaging
  
       - name: Verify API key
         env:
