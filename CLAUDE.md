@@ -27,35 +27,45 @@ the GitHub web UI.
   secret) — or by asking the user to paste back the log output / error
   text (never the key itself).
 
-## Known unknowns — verify, don't assume
+## Confirmed facts (verified against a real Vortexa account, live)
 
-`scripts/fetch_panama_wait_times.py` was written from Vortexa's *public*
-SDK documentation (https://vortechsa.github.io/python-sdk/), which
-confirms the `CanalTransitRecord` field names (`vessel_dead_weight`,
-`queue_arrival_time`, `canal_entry_time`, `canal`, `lock`, `direction`,
-etc.) but NOT:
+`scripts/fetch_panama_wait_times.py` was originally written from Vortexa's
+*public* SDK docs, which were incomplete on the search() filter signature.
+That's now been verified for real, via GitHub Actions logs against a live
+API key:
 
-- whether a ~5-year pull in one call is supported, or needs to be chunked
-  into yearly requests and concatenated (check for pagination behavior /
-  row limits in the Actions log — if `to_df()` silently truncates around
-  a suspiciously round number of rows, that's the signal)
-- whether the connected Vortexa account/plan actually includes
-  canal-transit-level data at all (vs. only cargo movements)
+- `CanalTransit` is the correct class (confirmed via `dir(vortexasdk)`).
+- The real `search()` filter kwargs (this is the actual signature, not a
+  guess): `filter_canal`, `filter_direction`, `filter_lock`,
+  `filter_vessel_dead_weight_min` / `_max`,
+  `filter_vessel_cubic_capacity_min` / `_max`, `filter_vessel_classes`,
+  `filter_vessels`, `filter_queue_arrival_time_min` / `_max`,
+  `filter_canal_entry_time_min` / `_max`,
+  `filter_canal_exit_time_min` / `_max`,
+  `filter_booked_time_min` / `_max`, `filter_booked_status`,
+  `filter_voyage_status`, plus various `exclude_*` equivalents.
+  **`filter_time_min` / `filter_time_max` do NOT exist on this endpoint**
+  — don't reuse that pattern from other Vortexa endpoints here.
+- `filter_canal` must be the exact string `'panama_canal'`.
+- `filter_direction` must be `'northbound'` or `'southbound'`.
+- `filter_lock` must be `'panamax'` or `'neopanamax'`.
+- DWT filtering can be pushed server-side via
+  `filter_vessel_dead_weight_min` / `_max` — no need to pull everything
+  and filter locally in pandas.
+- `packaging` must be installed alongside `vortexasdk` and `pandas` — the
+  SDK imports it internally but doesn't always pull it in as a
+  transitive dependency in every environment. Already added to
+  `requirements.txt`.
 
-Verified from Actions runs 32489219895 and 32497092728:
+## Still to verify
 
-- `CanalTransit` is importable from `vortexasdk==1.0.29`.
-- `CanalTransit.search()` uses timestamp-specific filters, including
-  `filter_queue_arrival_time_min` and `filter_queue_arrival_time_max`;
-  it does not accept generic `filter_time_min` / `filter_time_max`.
-- `vortexasdk==1.0.29` imports the `packaging` module but does not
-  install it as a transitive dependency. Keep `packaging` explicitly
-  listed in `requirements.txt`.
-
-When you get real signal on any of these (from an Actions run log, or
-from the user pasting back an error), fix the script AND update this
-section of CLAUDE.md with what's actually true, so the next session
-doesn't re-discover it from scratch.
+- Whether a full 5-year pull needs chunking/pagination, or if `to_df()`
+  handles it in one call — untested at that volume so far.
+- Whether real transits exist at all in the 88k/95k DWT bands (a probe
+  run against a real window will confirm row counts).
+- Whether `canal_entry_time`, `queue_arrival_time` etc. actually parse
+  cleanly as datetimes in the returned DataFrame, or need explicit
+  `pd.to_datetime()` handling for a particular format/timezone quirk.
 
 ## Suggested first session
 
