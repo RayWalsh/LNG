@@ -1,0 +1,28 @@
+name: Probe congestion breakdown for Panama
+
+# Manual-only diagnostic. Checks whether Panama Canal shows up as a
+# location in the (accessible!) VoyagesCongestionBreakdown endpoint, and
+# tests filtering it by our two target DWT bands.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run congestion breakdown probe
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/probe_congestion_breakdown.py
