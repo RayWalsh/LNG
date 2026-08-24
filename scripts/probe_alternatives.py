@@ -1,27 +1,23 @@
 """
-Follow-up probe, round 2: the first attempt at fixing these five
-endpoints (VesselPositions, VoyagesCongestionBreakdown,
-VoyagesSearchEnriched, VoyagesTimeseries, VoyagesTopHits) guessed wrong
-parameter names by hand. This version inspects each endpoint's REAL
-search() signature (inspect.signature) instead of guessing, which
-revealed: VesselPositions explicitly types its time params as
-Optional[str], and the Voyages* family — despite a datetime.datetime
-type hint — throws a JSON-serialization TypeError when given a real
-datetime object. So this version passes ISO-formatted strings for every
-time-window parameter it finds via introspection, which matches what
-these endpoints actually expect empirically.
+Follow-up probe, round 3.
 
-CargoMovements is intentionally NOT re-tested here — it already
-returned a clean, real answer in the previous run (30,509 rows, 9
-columns, none of them canal/waypoint-related), so there's nothing left
-to learn by re-running it.
+VesselPositions is now conclusively answered — DENIED (explicit 403
+permissions_error) — so it's dropped from this round entirely.
+
+The four Voyages* endpoints failed in round 2 not because of a
+permissions issue but because of a real quirk in their signatures:
+vessel_wait_time_min/_max are typed Optional[int] (a wait-time-in-hours
+THRESHOLD filter) despite matching the same "contains 'time', ends in
+_min/_max" naming pattern as genuine date-range parameters like
+time_min/time_max. This version checks each parameter's real type
+annotation (not just its name) to tell the two apart, and leaves the
+int-typed threshold params untouched at their default.
 """
 
 import inspect
 from datetime import datetime, timedelta
 
 from vortexasdk import (
-    VesselPositions,
     VoyagesCongestionBreakdown,
     VoyagesSearchEnriched,
     VoyagesTimeseries,
@@ -29,7 +25,6 @@ from vortexasdk import (
 )
 
 TARGET_CLASSES = [
-    ("VesselPositions", VesselPositions),
     ("VoyagesCongestionBreakdown", VoyagesCongestionBreakdown),
     ("VoyagesSearchEnriched", VoyagesSearchEnriched),
     ("VoyagesTimeseries", VoyagesTimeseries),
@@ -42,14 +37,25 @@ def iso(dt: datetime) -> str:
 
 
 def build_kwargs_for(search_method, now, week_ago):
-    """Inspect the REAL signature and fill in only the obviously
-    time-range-shaped parameters. These five endpoints' internal
-    serialization chokes on raw datetime objects (confirmed empirically —
-    even params type-hinted as datetime.datetime throw a JSON
-    serialization TypeError), so we pass ISO-formatted strings instead,
-    matching what VesselPositions explicitly types as Optional[str].
-    Returns None if some other required parameter can't be safely
-    guessed."""
+    """
+    Inspect the REAL signature and fill in only genuine time-window
+    parameters — using each parameter's REAL TYPE ANNOTATION to decide
+    how to fill it in, not just its name. This matters because these
+    endpoints mix two different things that both happen to match a
+    naive "contains 'time', ends in _min/_max" name filter:
+
+      - real date-range boundaries (e.g. time_min/time_max), which on
+        some endpoints are typed datetime.datetime (want a real
+        datetime object) and on others typed Optional[str] (want an
+        ISO string) — VesselPositions vs the Voyages family disagree
+        with each other here, confirmed empirically.
+      - vessel_wait_time_min/_max, which are typed Optional[int] — a
+        wait-time-in-hours THRESHOLD filter, not a date range at all.
+        These must be left at their default (None), not filled in.
+
+    Returns None if some other required (no-default) parameter can't be
+    safely guessed.
+    """
     sig = inspect.signature(search_method)
     kwargs = {}
     for pname, param in sig.parameters.items():
@@ -59,10 +65,22 @@ def build_kwargs_for(search_method, now, week_ago):
         looks_like_time_window = "time" in pname and (
             pname.endswith("_min") or pname.endswith("_max")
         )
+        ann_str = str(param.annotation)
+
         if looks_like_time_window:
-            kwargs[pname] = iso(week_ago) if pname.endswith("_min") else iso(now)
+            if "int" in ann_str:
+                # e.g. vessel_wait_time_min: Optional[int] — a threshold
+                # filter, not a date. Leave at default, don't touch it.
+                continue
+            elif "datetime" in ann_str:
+                kwargs[pname] = week_ago if pname.endswith("_min") else now
+            elif "str" in ann_str:
+                kwargs[pname] = iso(week_ago) if pname.endswith("_min") else iso(now)
+            # else: unrecognised annotation shape — leave at default
+            # rather than guess wrong.
         elif not has_default:
             return None
+
     return kwargs
 
 
@@ -86,25 +104,21 @@ def probe(label, cls, now, week_ago):
         if len(df):
             cols = list(df.columns)
             print(f"Columns ({len(cols)}):", cols[:20], "..." if len(cols) > 20 else "")
-    except ValueError as e:
+    except Exception as e:  # noqa: BLE001 - deliberately broad, this is a diagnostic script
         msg = str(e)
         if "403" in msg or "401" in msg or "permission" in msg.lower():
             print(f"DENIED — {msg}")
         else:
-            print(f"ERROR (ValueError) — {msg}")
-    except Exception as e:  # noqa: BLE001
-        print(f"ERROR ({type(e).__name__}) — {e}")
+            print(f"ERROR ({type(e).__name__}) — {msg}")
     print()
 
 
 def main():
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
-    day_ago = now - timedelta(days=1)
 
     for label, cls in TARGET_CLASSES:
-        window = (day_ago, now) if label == "VesselPositions" else (week_ago, now)
-        probe(label, cls, window[1], window[0])
+        probe(label, cls, now, week_ago)
 
 
 if __name__ == "__main__":
