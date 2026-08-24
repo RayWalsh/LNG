@@ -152,8 +152,8 @@
     font-size:11px;
     font-weight:600;
   }
-  .badge.nb{ background:#e4f6f4; color:#0f7a73; }
-  .badge.sb{ background:#eef1fb; color:#3a4fa0; }
+  .badge.laden{ background:#e4f6f4; color:#0f7a73; }
+  .badge.ballast{ background:#eef1fb; color:#3a4fa0; }
   footer{
     text-align:center;
     color:var(--muted);
@@ -201,7 +201,8 @@
   </section>
 
   <section>
-    <h2>Vessels currently in queue (88k / 95k DWT bands)</h2>
+    <h2>Live vessel queue</h2>
+    <p class="section-sub">Not available from the current data source (Voyages Congestion Breakdown gives aggregated stats, not a per-vessel queue list) — this was a CanalTransit-only feature. Will populate automatically if CanalTransit access is granted later.</p>
     <div id="queue-table"></div>
   </section>
 
@@ -217,33 +218,29 @@
 // ---------------------------------------------------------------------
 const SAMPLE_DATA = {
   generated_at_utc: new Date().toISOString(),
-  lookback_days: 90,
+  data_source: "vortexa_voyages_congestion_breakdown",
+  current_window_days: 30,
   dwt_bands: {
     "88k DWT LNG": {
       dwt_range: [86000, 90000],
-      n_transits: 14,
+      n_voyages: 14,
       avg_wait_days: 2.3,
-      avg_wait_hours: 55.2,
-      by_direction: {
-        Northbound: { n_transits: 7, avg_wait_days: 1.9, avg_wait_hours: 45.6 },
-        Southbound: { n_transits: 7, avg_wait_days: 2.7, avg_wait_hours: 64.8 }
+      by_status: {
+        Laden: { n_voyages: 7, avg_wait_days: 1.9 },
+        Ballast: { n_voyages: 7, avg_wait_days: 2.7 }
       }
     },
     "95k DWT LNG": {
       dwt_range: [93000, 97000],
-      n_transits: 11,
+      n_voyages: 11,
       avg_wait_days: 3.1,
-      avg_wait_hours: 74.4,
-      by_direction: {
-        Northbound: { n_transits: 5, avg_wait_days: 2.6, avg_wait_hours: 62.4 },
-        Southbound: { n_transits: 6, avg_wait_days: 3.5, avg_wait_hours: 84.0 }
+      by_status: {
+        Laden: { n_voyages: 5, avg_wait_days: 2.6 },
+        Ballast: { n_voyages: 6, avg_wait_days: 3.5 }
       }
     }
   },
-  current_queue: [
-    { vessel_name: "SAMPLE LNG CARRIER I", vessel_imo: 9000001, vessel_dead_weight: 87650, direction: "Northbound", lock: "Neopanamax", hours_waiting_so_far: 38.5 },
-    { vessel_name: "SAMPLE LNG CARRIER II", vessel_imo: 9000002, vessel_dead_weight: 95210, direction: "Southbound", lock: "Neopanamax", hours_waiting_so_far: 61.2 }
-  ],
+  current_queue: [],  // permanently empty — see note below the queue section
   weekly_history: {} // filled in below by buildSampleWeeklyHistory()
 };
 
@@ -266,9 +263,9 @@ function buildSampleWeeklyHistory(){
       const avg = Math.max(0.5, baseline + seasonal + noise);
       weeks.push({
         week_start: weekStart.toISOString().slice(0,10),
-        n_transits: 2 + Math.round(Math.abs(noise) * 3),
+        n_voyages: 2 + Math.round(Math.abs(noise) * 3),
         avg_wait_days: Math.round(avg * 100) / 100,
-        by_direction: {}
+        by_status: {}
       });
     }
     history[label] = weeks;
@@ -277,32 +274,15 @@ function buildSampleWeeklyHistory(){
 }
 SAMPLE_DATA.weekly_history = buildSampleWeeklyHistory();
 
-// Generate a synthetic 5-year seasonal range (min/max/avg per week-of-year)
-// per band, again purely illustrative until real panama_wait_times.json
-// data is available.
-function buildSampleSeasonalRange(){
-  const bands = { "88k DWT LNG": 2.2, "95k DWT LNG": 2.9 };
-  const seasonal = {};
-
-  Object.entries(bands).forEach(([label, baseline]) => {
-    const weeks = [];
-    for(let wk = 1; wk <= 52; wk++){
-      const seasonalShape = 0.7 * Math.sin(wk / 52 * Math.PI * 2 - Math.PI/2) + 0.4 * Math.sin(wk / 52 * Math.PI * 4);
-      const center = Math.max(0.6, baseline + seasonalShape);
-      const spread = 0.6 + 0.4 * Math.abs(Math.sin(wk * 0.3));
-      weeks.push({
-        week_of_year: wk,
-        n_years: 4,
-        min_days: Math.round(Math.max(0.3, center - spread) * 100) / 100,
-        max_days: Math.round((center + spread) * 100) / 100,
-        avg_days: Math.round(center * 100) / 100,
-      });
-    }
-    seasonal[label] = weeks;
-  });
-  return seasonal;
-}
-SAMPLE_DATA.seasonal_range = buildSampleSeasonalRange();
+// NOTE: no sample seasonal-range generator here (deliberately). The
+// 5-year seasonal range isn't implemented yet for the current data
+// source (VoyagesCongestionBreakdown) — see fetch_panama_wait_times.py's
+// docstring for why. Faking a synthetic seasonal chart in sample mode
+// would misleadingly promise a feature the real pipeline doesn't
+// currently deliver. SAMPLE_DATA.seasonal_range is left as {} so the
+// dashboard's existing empty-state message shows here too, matching
+// exactly what real data will show until this is built.
+SAMPLE_DATA.seasonal_range = {};
 
 let waitChart;
 let weeklyChart;
@@ -318,18 +298,17 @@ function renderCards(bands){
   cardsEl.innerHTML = "";
   Object.entries(bands).forEach(([label, b]) => {
     const [lo, hi] = b.dwt_range;
-    const nb = b.by_direction.Northbound || b.by_direction.northbound;
-    const sb = b.by_direction.Southbound || b.by_direction.southbound;
+    const statusEntries = Object.entries(b.by_status || {});
+    const statusRows = statusEntries.map(([status, d]) => `
+      <div><span class="badge ${status.toLowerCase()}">${status}</span><b>${d.avg_wait_days}d</b></div>
+    `).join("");
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       <h3>${label}</h3>
-      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_transits} transits in window</div>
+      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_voyages ?? 0} voyages in window</div>
       <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
-      <div class="dir-row">
-        <div><span class="badge nb">N/B</span><b>${nb ? nb.avg_wait_days + "d" : "–"}</b></div>
-        <div><span class="badge sb">S/B</span><b>${sb ? sb.avg_wait_days + "d" : "–"}</b></div>
-      </div>
+      <div class="dir-row">${statusRows || "<div>No breakdown available</div>"}</div>
     `;
     cardsEl.appendChild(card);
   });
@@ -337,26 +316,32 @@ function renderCards(bands){
 
 function renderChart(bands){
   const labels = Object.keys(bands);
-  const nbData = labels.map(l => {
-    const d = bands[l].by_direction.Northbound || bands[l].by_direction.northbound;
-    return d ? d.avg_wait_days : 0;
+
+  // Union of status labels (Laden/Ballast) across all bands, in a stable order
+  const allStatuses = [];
+  labels.forEach(l => {
+    Object.keys(bands[l].by_status || {}).forEach(s => {
+      if(!allStatuses.includes(s)) allStatuses.push(s);
+    });
   });
-  const sbData = labels.map(l => {
-    const d = bands[l].by_direction.Southbound || bands[l].by_direction.southbound;
-    return d ? d.avg_wait_days : 0;
-  });
+
+  const statusColors = { Laden: "#0f9a92", Ballast: "#123a63" };
+  const fallbackColors = ["#0f9a92", "#123a63", "#c0552b", "#7a5cc0"];
+
+  const datasets = allStatuses.map((status, i) => ({
+    label: status,
+    data: labels.map(l => {
+      const d = (bands[l].by_status || {})[status];
+      return d ? d.avg_wait_days : 0;
+    }),
+    backgroundColor: statusColors[status] || fallbackColors[i % fallbackColors.length],
+  }));
 
   const ctx = document.getElementById("waitChart");
   if(waitChart) waitChart.destroy();
   waitChart = new Chart(ctx, {
     type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Northbound", data: nbData, backgroundColor: "#0f9a92" },
-        { label: "Southbound", data: sbData, backgroundColor: "#123a63" }
-      ]
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       plugins: { legend: { position: "bottom" } },
