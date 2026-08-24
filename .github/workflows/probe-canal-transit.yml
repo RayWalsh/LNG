@@ -45,7 +45,7 @@ jobs:
           print(CanalTransit().search.__doc__)
           "
 
-      - name: Small real pull — last 7 days, Panama only, print shape
+      - name: Small real pull — last 30 days, Panama only, print shape
         env:
           VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
         run: |
@@ -54,11 +54,12 @@ jobs:
           from vortexasdk import CanalTransit
 
           time_max = datetime.utcnow()
-          time_min = time_max - timedelta(days=7)
+          time_min = time_max - timedelta(days=30)
 
           result = CanalTransit().search(
-              filter_time_min=time_min,
-              filter_time_max=time_max,
+              filter_canal='panama_canal',
+              filter_queue_arrival_time_min=time_min,
+              filter_queue_arrival_time_max=time_max,
           )
           df = result.to_df()
 
@@ -70,6 +71,39 @@ jobs:
               print('First row:')
               print(df.iloc[0])
               print()
-              if 'canal' in df.columns:
-                  print('Distinct canal values:', df['canal'].unique())
+              if 'vessel_dead_weight' in df.columns:
+                  print('vessel_dead_weight — min/max/count non-null:')
+                  print(df['vessel_dead_weight'].min(), df['vessel_dead_weight'].max(), df['vessel_dead_weight'].notna().sum())
+          "
+
+      - name: Probe the two target DWT bands specifically
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: |
+          python -c "
+          from datetime import datetime, timedelta
+          from vortexasdk import CanalTransit
+
+          time_max = datetime.utcnow()
+          time_min = time_max - timedelta(days=180)
+
+          bands = {
+              '88k DWT band (86000-90000)': (86000, 90000),
+              '95k DWT band (93000-97000)': (93000, 97000),
+          }
+
+          for label, (dwt_min, dwt_max) in bands.items():
+              result = CanalTransit().search(
+                  filter_canal='panama_canal',
+                  filter_vessel_dead_weight_min=dwt_min,
+                  filter_vessel_dead_weight_max=dwt_max,
+                  filter_queue_arrival_time_min=time_min,
+                  filter_queue_arrival_time_max=time_max,
+              )
+              df = result.to_df()
+              print(f'{label}: {len(df)} rows in the last 180 days')
+              if len(df):
+                  cols = [c for c in ['vessel_name','vessel_dead_weight','direction','lock','queue_arrival_time','canal_entry_time'] if c in df.columns]
+                  print(df[cols].head(5).to_string())
+              print()
           "
