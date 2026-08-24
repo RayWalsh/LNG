@@ -1,0 +1,28 @@
+name: Probe alternative endpoints (Voyages, VesselPositions, CargoMovements)
+
+# Manual-only diagnostic. Retests the endpoints that came back ERROR
+# (not ACCESSIBLE/DENIED) in the main access audit, and inspects real
+# CargoMovements column names for anything canal/waypoint related.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run alternatives probe
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/probe_alternatives.py
