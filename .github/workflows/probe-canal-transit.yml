@@ -1,0 +1,75 @@
+name: Probe Canal Transit endpoint
+
+# Manual-only diagnostic. Confirms:
+#   1. CanalTransit is a real importable class in the installed SDK
+#   2. What filter arguments its .search() method actually accepts
+#   3. What a real (small, 7-day) pull of Panama data actually looks like
+# Delete this file once the real pipeline is confirmed working.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: List available endpoint classes
+        run: |
+          python -c "
+          import vortexasdk
+          names = [n for n in dir(vortexasdk) if not n.startswith('_')]
+          print('Available in vortexasdk:')
+          for n in sorted(names):
+              print(' -', n)
+          "
+
+      - name: Confirm CanalTransit and inspect its search() signature
+        run: |
+          python -c "
+          from vortexasdk import CanalTransit
+          import inspect
+          print('CanalTransit imported OK')
+          print()
+          print('search() signature:')
+          print(inspect.signature(CanalTransit().search))
+          print()
+          print('search() docstring:')
+          print(CanalTransit().search.__doc__)
+          "
+
+      - name: Small real pull — last 7 days, Panama only, print shape
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: |
+          python -c "
+          from datetime import datetime, timedelta
+          from vortexasdk import CanalTransit
+
+          time_max = datetime.utcnow()
+          time_min = time_max - timedelta(days=7)
+
+          result = CanalTransit().search(
+              filter_time_min=time_min,
+              filter_time_max=time_max,
+          )
+          df = result.to_df()
+
+          print('Rows returned:', len(df))
+          print()
+          print('Columns:', list(df.columns))
+          print()
+          if len(df):
+              print('First row:')
+              print(df.iloc[0])
+              print()
+              if 'canal' in df.columns:
+                  print('Distinct canal values:', df['canal'].unique())
+          "
