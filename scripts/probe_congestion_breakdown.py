@@ -47,22 +47,37 @@ def test_panama_by_dwt_band(location_value):
     now = datetime.utcnow()
     ninety_days_ago = now - timedelta(days=90)
 
+    # IMPORTANT AMBIGUITY TO RESOLVE: with breakdown_property left at its
+    # default ('port'), results came back grouped by LOADING port
+    # (Sabine Pass, Cameron, etc.), not by "Panama Canal" itself. That
+    # leaves it genuinely unclear whether avg_waiting_time measures wait
+    # AT THE CANAL specifically, or general port/loading queue time for
+    # voyages that happen to route through Panama. Try a few plausible
+    # breakdown_property values to see if any produces "Panama Canal"
+    # itself as the location label — that would confirm we're measuring
+    # the right thing.
+    breakdown_property_candidates = ["port", "waypoint", "location", "canal", "chokepoint"]
+
     for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
-        print(f"--- Panama Canal congestion, {band_label} ({dwt_min}-{dwt_max} DWT) ---")
-        try:
-            df = VoyagesCongestionBreakdown().search(
-                time_min=ninety_days_ago,
-                time_max=now,
-                locations=location_value,
-                vessel_dwt_min=dwt_min,
-                vessel_dwt_max=dwt_max,
-            ).to_df()
-            print(f"{len(df)} rows")
-            if len(df):
-                print(df.to_string())
-        except Exception as e:  # noqa: BLE001
-            print(f"ERROR ({type(e).__name__}) — {e}")
-        print()
+        for bp in breakdown_property_candidates:
+            print(f"--- Panama Canal congestion, {band_label} ({dwt_min}-{dwt_max} DWT), breakdown_property={bp!r} ---")
+            try:
+                df = VoyagesCongestionBreakdown().search(
+                    time_min=ninety_days_ago,
+                    time_max=now,
+                    locations=location_value,
+                    vessel_dwt_min=dwt_min,
+                    vessel_dwt_max=dwt_max,
+                    breakdown_property=bp,
+                ).to_df()
+                print(f"{len(df)} rows")
+                if len(df) and "location_details.0.label" in df.columns:
+                    print("Location labels:", df["location_details.0.label"].tolist())
+                elif len(df):
+                    print(df.to_string())
+            except Exception as e:  # noqa: BLE001
+                print(f"ERROR ({type(e).__name__}) — {e}")
+            print()
 
 
 def main():
