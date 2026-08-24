@@ -1,23 +1,26 @@
 """
-Follow-up probe: the endpoints that came back ERROR (not ACCESSIBLE or
-DENIED) in the first audit run failed because of a bug in the ORIGINAL
-audit script's datetime handling. This version fixes that properly by
-inspecting each endpoint's REAL search() signature (inspect.signature —
-same approach that correctly identified CanalTransit's real params
-earlier) instead of guessing parameter names, and uses real Python
-datetime objects throughout (confirmed working for CargoMovements in
-the original full audit — 14,271 rows returned that way).
+Follow-up probe, round 2: the first attempt at fixing these five
+endpoints (VesselPositions, VoyagesCongestionBreakdown,
+VoyagesSearchEnriched, VoyagesTimeseries, VoyagesTopHits) guessed wrong
+parameter names by hand. This version inspects each endpoint's REAL
+search() signature (inspect.signature) instead of guessing, which
+revealed: VesselPositions explicitly types its time params as
+Optional[str], and the Voyages* family — despite a datetime.datetime
+type hint — throws a JSON-serialization TypeError when given a real
+datetime object. So this version passes ISO-formatted strings for every
+time-window parameter it finds via introspection, which matches what
+these endpoints actually expect empirically.
 
-Also prints the full column list of a couple of real CargoMovements
-rows, so we can visually check whether any column hints at canal/transit
-waypoint data riding along on the cargo movement record itself.
+CargoMovements is intentionally NOT re-tested here — it already
+returned a clean, real answer in the previous run (30,509 rows, 9
+columns, none of them canal/waypoint-related), so there's nothing left
+to learn by re-running it.
 """
 
 import inspect
 from datetime import datetime, timedelta
 
 from vortexasdk import (
-    CargoMovements,
     VesselPositions,
     VoyagesCongestionBreakdown,
     VoyagesSearchEnriched,
@@ -34,10 +37,19 @@ TARGET_CLASSES = [
 ]
 
 
+def iso(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+
+
 def build_kwargs_for(search_method, now, week_ago):
     """Inspect the REAL signature and fill in only the obviously
-    time-range-shaped parameters, using real datetime objects. Returns
-    None if some other required parameter can't be safely guessed."""
+    time-range-shaped parameters. These five endpoints' internal
+    serialization chokes on raw datetime objects (confirmed empirically —
+    even params type-hinted as datetime.datetime throw a JSON
+    serialization TypeError), so we pass ISO-formatted strings instead,
+    matching what VesselPositions explicitly types as Optional[str].
+    Returns None if some other required parameter can't be safely
+    guessed."""
     sig = inspect.signature(search_method)
     kwargs = {}
     for pname, param in sig.parameters.items():
@@ -48,7 +60,7 @@ def build_kwargs_for(search_method, now, week_ago):
             pname.endswith("_min") or pname.endswith("_max")
         )
         if looks_like_time_window:
-            kwargs[pname] = week_ago if pname.endswith("_min") else now
+            kwargs[pname] = iso(week_ago) if pname.endswith("_min") else iso(now)
         elif not has_default:
             return None
     return kwargs
@@ -88,28 +100,11 @@ def probe(label, cls, now, week_ago):
 def main():
     now = datetime.utcnow()
     week_ago = now - timedelta(days=7)
+    day_ago = now - timedelta(days=1)
 
     for label, cls in TARGET_CLASSES:
-        probe(label, cls, now, week_ago)
-
-    # --- Inspect real CargoMovements columns for anything canal-related ---
-    # Uses real datetime objects, matching what already worked in the
-    # original full audit (14,271 rows returned there).
-
-    print("--- CargoMovements: full column list (last 30 days) ---")
-    try:
-        df = CargoMovements().search(
-            filter_time_min=now - timedelta(days=30),
-            filter_time_max=now,
-        ).to_df()
-        print(f"{len(df)} rows returned. All columns:")
-        for col in df.columns:
-            flag = "  <-- possible canal/waypoint field" if any(
-                kw in col.lower() for kw in ["canal", "waypoint", "queue", "transit", "panama"]
-            ) else ""
-            print(f"  {col}{flag}")
-    except Exception as e:  # noqa: BLE001
-        print(f"ERROR — {e}")
+        window = (day_ago, now) if label == "VesselPositions" else (week_ago, now)
+        probe(label, cls, window[1], window[0])
 
 
 if __name__ == "__main__":
