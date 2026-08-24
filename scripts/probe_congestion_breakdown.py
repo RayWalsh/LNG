@@ -1,12 +1,10 @@
 """
-Follow-up probe, round 2: Geographies search already confirmed a real
-"Panama Canal" waypoint geography exists with a specific ID. This
-version skips the broad unfiltered congestion survey entirely (it hit a
-500 Internal Server Error last time, most likely from an unfiltered,
-oversized global query — heavy and unnecessary now that we have the
-exact ID we need) and goes straight to testing
-VoyagesCongestionBreakdown filtered specifically to the Panama Canal
-waypoint, once per target DWT band.
+Follow-up probe, round 3: fixed a parameter-name mix-up. The previous
+attempt used `congestion_target_location`, which belongs to
+VoyagesSearchEnriched/VoyagesTimeseries — NOT VoyagesCongestionBreakdown.
+Checking VoyagesCongestionBreakdown's actual captured signature, the
+real parameter for filtering to a specific place is plain `locations`.
+This version uses that instead.
 """
 
 from datetime import datetime, timedelta
@@ -55,7 +53,7 @@ def test_panama_by_dwt_band(location_value):
             df = VoyagesCongestionBreakdown().search(
                 time_min=ninety_days_ago,
                 time_max=now,
-                congestion_target_location=location_value,
+                locations=location_value,
                 vessel_dwt_min=dwt_min,
                 vessel_dwt_max=dwt_max,
             ).to_df()
@@ -74,7 +72,7 @@ def main():
         print("Could not find a 'Panama Canal' waypoint in Geographies — stopping here.")
         return
 
-    print(f"Using congestion_target_location={panama_canal_id!r} (Panama Canal waypoint)\n")
+    print(f"Using locations={panama_canal_id!r} (Panama Canal waypoint)\n")
     test_panama_by_dwt_band(panama_canal_id)
 
 
