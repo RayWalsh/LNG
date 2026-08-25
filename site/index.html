@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Panama Canal — LNG Transit Wait Times</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js"></script>
 <style>
   :root{
     /* Braemar brand palette (BRA002 Guidelines, section 03.1) */
@@ -32,6 +35,15 @@
     color:#fff;
     padding:20px clamp(20px, 3vw, 40px);
   }
+  .header-inner{
+    width:100%;
+    max-width:1440px;
+    margin:0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+  }
   header h1{
     margin:0 0 4px 0;
     font-size:24px;
@@ -52,6 +64,20 @@
     grid-template-columns:minmax(0, .85fr) minmax(0, 1.15fr);
     gap:16px;
   }
+  .export-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .export-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.3);
+    border-radius:9px;
+    background:rgba(255,255,255,.08);
+    color:#fff;
+    padding:8px 12px;
+    font:600 12px/1 inherit;
+    cursor:pointer;
+  }
+  .export-btn:hover{ background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.5); }
+  .export-btn:disabled{ opacity:.55; cursor:wait; }
+  body.exporting .export-actions{ visibility:hidden; }
   .banner{
     background:#fdf1e7;
     border:1px solid #eecda3;
@@ -202,14 +228,25 @@
     .chart-box{ height:230px; }
     .stat{ font-size:28px; }
     .wrap{ gap:12px; }
+    .header-inner{ align-items:flex-start; flex-direction:column; gap:12px; }
+    .export-actions{ width:100%; }
+    .export-btn{ flex:1; }
   }
 </style>
 </head>
 <body>
 
 <header>
-  <h1>Panama Canal — LNG Transit Wait Times</h1>
-  <p id="updated-line">Loading data…</p>
+  <div class="header-inner">
+    <div>
+      <h1>Panama Canal — LNG Transit Wait Times</h1>
+      <p id="updated-line">Loading data…</p>
+    </div>
+    <div class="export-actions" aria-label="Export dashboard">
+      <button class="export-btn" id="pdf-btn" type="button">Export PDF</button>
+      <button class="export-btn" id="pptx-btn" type="button">Export PPTX</button>
+    </div>
+  </div>
 </header>
 
 <div class="wrap">
@@ -327,6 +364,106 @@ SAMPLE_DATA.seasonal_range = {};
 
 let waitChart;
 let weeklyChart;
+
+function exportStamp(){
+  return new Date().toISOString().slice(0,10);
+}
+
+async function captureElement(element, scale = 2){
+  return html2canvas(element, {
+    scale,
+    useCORS:true,
+    backgroundColor:"#f8f6f5",
+    logging:false,
+    scrollX:0,
+    scrollY:-window.scrollY,
+  });
+}
+
+async function withExportState(button, label, task){
+  const buttons = document.querySelectorAll(".export-btn");
+  const original = button.textContent;
+  buttons.forEach(b => b.disabled = true);
+  button.textContent = label;
+  document.body.classList.add("exporting");
+  try{
+    await task();
+  }catch(err){
+    console.error(err);
+    alert("The export could not be created. Please try again.");
+  }finally{
+    document.body.classList.remove("exporting");
+    button.textContent = original;
+    buttons.forEach(b => b.disabled = false);
+  }
+}
+
+async function exportPDF(){
+  const button = document.getElementById("pdf-btn");
+  await withExportState(button, "Building PDF…", async () => {
+    const canvas = await captureElement(document.body, 2);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4", compress:true });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imageHeight = canvas.height * pageWidth / canvas.width;
+    const image = canvas.toDataURL("image/jpeg", .92);
+    let offset = 0;
+    let page = 0;
+    while(offset < imageHeight){
+      if(page > 0) pdf.addPage();
+      pdf.addImage(image, "JPEG", 0, -offset, pageWidth, imageHeight, undefined, "FAST");
+      offset += pageHeight;
+      page += 1;
+    }
+    pdf.save(`panama-lng-dashboard-${exportStamp()}.pdf`);
+  });
+}
+
+async function exportPPTX(){
+  const button = document.getElementById("pptx-btn");
+  await withExportState(button, "Building PPTX…", async () => {
+    const pptx = new PptxGenJS();
+    pptx.layout = "LAYOUT_WIDE";
+    pptx.author = "Braemar LNG Desk";
+    pptx.company = "Braemar plc";
+    pptx.subject = "Panama Canal LNG transit wait times";
+    pptx.title = "Panama Canal — LNG Transit Wait Times";
+    pptx.lang = "en-GB";
+
+    const addHeading = (slide, title, subtitle = "") => {
+      slide.background = { color:"F8F6F5" };
+      slide.addShape(pptx.ShapeType.rect, { x:0, y:0, w:13.333, h:.78, fill:{color:"182432"}, line:{color:"182432"} });
+      slide.addText(title, { x:.45, y:.18, w:9.8, h:.3, fontFace:"Arial", fontSize:20, bold:true, color:"FFFFFF", margin:0 });
+      if(subtitle) slide.addText(subtitle, { x:10.15, y:.24, w:2.7, h:.2, fontFace:"Arial", fontSize:8, color:"A9BAC4", align:"right", margin:0 });
+    };
+
+    const addCanvas = (slide, canvas, top = 1.02) => {
+      const maxW = 12.43;
+      const maxH = 7.0 - top;
+      const ratio = canvas.width / canvas.height;
+      let w = maxW;
+      let h = w / ratio;
+      if(h > maxH){ h = maxH; w = h * ratio; }
+      slide.addImage({ data:canvas.toDataURL("image/png"), x:(13.333-w)/2, y:top, w, h });
+    };
+
+    let slide = pptx.addSlide();
+    addHeading(slide, "Panama Canal — LNG Transit Wait Times", document.getElementById("updated-line").textContent);
+    addCanvas(slide, await captureElement(document.getElementById("cards"), 2), 1.15);
+
+    for(const section of document.querySelectorAll(".wrap > section")){
+      slide = pptx.addSlide();
+      addHeading(slide, section.querySelector("h2")?.textContent || "Dashboard");
+      addCanvas(slide, await captureElement(section, 2), 1.02);
+    }
+
+    await pptx.writeFile({ fileName:`panama-lng-dashboard-${exportStamp()}.pptx` });
+  });
+}
+
+document.getElementById("pdf-btn").addEventListener("click", exportPDF);
+document.getElementById("pptx-btn").addEventListener("click", exportPPTX);
 
 function fmtUpdated(iso, isSample){
   const d = new Date(iso);
