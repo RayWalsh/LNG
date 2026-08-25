@@ -1,0 +1,29 @@
+name: Probe Cristobal to Balboa transit confirmation
+
+# Manual-only diagnostic. Pulls full voyage history (no location filter)
+# for the specific vessels already seen waiting at Cristobal, and checks
+# whether Balboa shows up shortly after — direct evidence of a completed
+# canal transit, rather than inferring it from trade-pattern reasoning.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run Cristobal-to-Balboa probe
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/probe_cristobal_to_balboa.py
