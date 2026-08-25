@@ -1,4 +1,5 @@
 vortexasdk
 packaging
 pandas
+openpyxl
  

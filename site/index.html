@@ -152,8 +152,8 @@
     font-size:11px;
     font-weight:600;
   }
-  .badge.laden{ background:#e4f6f4; color:#0f7a73; }
-  .badge.ballast{ background:#eef1fb; color:#3a4fa0; }
+  .badge.northbound{ background:#e4f6f4; color:#0f7a73; }
+  .badge.southbound{ background:#eef1fb; color:#3a4fa0; }
   footer{
     text-align:center;
     color:var(--muted);
@@ -202,13 +202,13 @@
 
   <section>
     <h2>Live vessel queue</h2>
-    <p class="section-sub">Not available from the current data source (Voyages Congestion Breakdown gives aggregated stats, not a per-vessel queue list) — this was a CanalTransit-only feature. Will populate automatically if CanalTransit access is granted later.</p>
+    <p class="section-sub">Vessels currently waiting to transit, within the tracked DWT bands.</p>
     <div id="queue-table"></div>
   </section>
 
 </div>
 
-<footer>Source: Vortexa Canal Transit dataset · Braemar plc — LNG Desk</footer>
+<footer>Source: Vortexa Panama Canal Report · Braemar plc — LNG Desk</footer>
 
 <script>
 // ---------------------------------------------------------------------
@@ -218,29 +218,31 @@
 // ---------------------------------------------------------------------
 const SAMPLE_DATA = {
   generated_at_utc: new Date().toISOString(),
-  data_source: "vortexa_voyages_congestion_breakdown",
+  data_source: "vortexa_panama_canal_report_email",
   current_window_days: 30,
   dwt_bands: {
     "88k DWT LNG": {
       dwt_range: [86000, 90000],
-      n_voyages: 14,
+      n_transits: 14,
       avg_wait_days: 2.3,
-      by_status: {
-        Laden: { n_voyages: 7, avg_wait_days: 1.9 },
-        Ballast: { n_voyages: 7, avg_wait_days: 2.7 }
+      by_direction: {
+        Northbound: { n_transits: 7, avg_wait_days: 1.9 },
+        Southbound: { n_transits: 7, avg_wait_days: 2.7 }
       }
     },
     "95k DWT LNG": {
       dwt_range: [93000, 97000],
-      n_voyages: 11,
+      n_transits: 11,
       avg_wait_days: 3.1,
-      by_status: {
-        Laden: { n_voyages: 5, avg_wait_days: 2.6 },
-        Ballast: { n_voyages: 6, avg_wait_days: 3.5 }
+      by_direction: {
+        Northbound: { n_transits: 5, avg_wait_days: 2.6 },
+        Southbound: { n_transits: 6, avg_wait_days: 3.5 }
       }
     }
   },
-  current_queue: [],  // permanently empty — see note below the queue section
+  current_queue: [
+    { vessel_name: "SAMPLE LNG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
+  ],
   weekly_history: {} // filled in below by buildSampleWeeklyHistory()
 };
 
@@ -263,9 +265,9 @@ function buildSampleWeeklyHistory(){
       const avg = Math.max(0.5, baseline + seasonal + noise);
       weeks.push({
         week_start: weekStart.toISOString().slice(0,10),
-        n_voyages: 2 + Math.round(Math.abs(noise) * 3),
+        n_transits: 2 + Math.round(Math.abs(noise) * 3),
         avg_wait_days: Math.round(avg * 100) / 100,
-        by_status: {}
+        by_direction: {}
       });
     }
     history[label] = weeks;
@@ -298,17 +300,17 @@ function renderCards(bands){
   cardsEl.innerHTML = "";
   Object.entries(bands).forEach(([label, b]) => {
     const [lo, hi] = b.dwt_range;
-    const statusEntries = Object.entries(b.by_status || {});
-    const statusRows = statusEntries.map(([status, d]) => `
-      <div><span class="badge ${status.toLowerCase()}">${status}</span><b>${d.avg_wait_days}d</b></div>
+    const dirEntries = Object.entries(b.by_direction || {});
+    const dirRows = dirEntries.map(([direction, d]) => `
+      <div><span class="badge ${direction.toLowerCase()}">${direction}</span><b>${d.avg_wait_days}d</b></div>
     `).join("");
     const card = document.createElement("div");
     card.className = "card";
     card.innerHTML = `
       <h3>${label}</h3>
-      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_voyages ?? 0} voyages in window</div>
+      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_transits ?? 0} transits in window</div>
       <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
-      <div class="dir-row">${statusRows || "<div>No breakdown available</div>"}</div>
+      <div class="dir-row">${dirRows || "<div>No breakdown available</div>"}</div>
     `;
     cardsEl.appendChild(card);
   });
@@ -317,24 +319,24 @@ function renderCards(bands){
 function renderChart(bands){
   const labels = Object.keys(bands);
 
-  // Union of status labels (Laden/Ballast) across all bands, in a stable order
-  const allStatuses = [];
+  // Union of direction labels (Northbound/Southbound) across all bands
+  const allDirections = [];
   labels.forEach(l => {
-    Object.keys(bands[l].by_status || {}).forEach(s => {
-      if(!allStatuses.includes(s)) allStatuses.push(s);
+    Object.keys(bands[l].by_direction || {}).forEach(s => {
+      if(!allDirections.includes(s)) allDirections.push(s);
     });
   });
 
-  const statusColors = { Laden: "#0f9a92", Ballast: "#123a63" };
+  const directionColors = { Northbound: "#0f9a92", Southbound: "#123a63" };
   const fallbackColors = ["#0f9a92", "#123a63", "#c0552b", "#7a5cc0"];
 
-  const datasets = allStatuses.map((status, i) => ({
-    label: status,
+  const datasets = allDirections.map((direction, i) => ({
+    label: direction,
     data: labels.map(l => {
-      const d = (bands[l].by_status || {})[status];
+      const d = (bands[l].by_direction || {})[direction];
       return d ? d.avg_wait_days : 0;
     }),
-    backgroundColor: statusColors[status] || fallbackColors[i % fallbackColors.length],
+    backgroundColor: directionColors[direction] || fallbackColors[i % fallbackColors.length],
   }));
 
   const ctx = document.getElementById("waitChart");

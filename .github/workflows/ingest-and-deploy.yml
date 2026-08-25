@@ -1,0 +1,69 @@
+name: Ingest Vortexa report and deploy dashboard
+
+# Triggers when a new/updated Vortexa Panama Canal Report is uploaded to
+# data/latest_vortexa_report.xlsx (just overwrite that same file each
+# time you get a new report from Vortexa — no need to rename it).
+#
+# Unlike the earlier API-based pipeline, this data is CUMULATIVE and
+# manually supplied, so data/master_transits.csv is committed back to
+# the repo on every run (not regenerated from scratch) — see
+# scripts/ingest_vortexa_report.py for the upsert logic.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "data/latest_vortexa_report.xlsx"
+  workflow_dispatch: {}   # lets you re-run manually without a new upload
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  ingest-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Ingest the uploaded Vortexa report
+        run: python3 scripts/ingest_vortexa_report.py data/latest_vortexa_report.xlsx
+
+      - name: Build dashboard JSON from master dataset
+        run: python3 scripts/build_dashboard_data.py
+
+      - name: Commit updated master dataset back to the repo
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Update master transits dataset from latest Vortexa report"
+          file_pattern: "data/master_transits.csv"
+
+      - name: Upload site as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: ingest-and-build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
