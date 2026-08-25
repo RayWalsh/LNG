@@ -1,9 +1,9 @@
-name: Probe Balboa and Cristobal
+name: Probe Cristobal to Balboa transit confirmation
 
-# Manual-only diagnostic. Checks whether Balboa and Cristobal (the
-# actual Panama Canal entry/exit anchorages) exist as distinct
-# Geographies, and whether real per-voyage arrival/departure data is
-# available at those specific locations.
+# Manual-only diagnostic. Pulls full voyage history (no location filter)
+# for the specific vessels already seen waiting at Cristobal, and checks
+# whether Balboa shows up shortly after — direct evidence of a completed
+# canal transit, rather than inferring it from trade-pattern reasoning.
 
 on:
   workflow_dispatch: {}
@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: pip install vortexasdk packaging pandas
 
-      - name: Run Balboa/Cristobal probe
+      - name: Run Cristobal-to-Balboa probe
         env:
           VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
-        run: python3 scripts/probe_balboa_cristobal.py
+        run: python3 scripts/probe_cristobal_to_balboa.py
