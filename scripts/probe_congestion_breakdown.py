@@ -12,8 +12,9 @@ from datetime import datetime, timedelta
 from vortexasdk import Geographies, VoyagesCongestionBreakdown
 
 DWT_BANDS = {
-    "88k DWT LNG": (86_000, 90_000),
-    "95k DWT LNG": (93_000, 97_000),
+    "84k DWT LPG — Panamax": (82_000, 86_000),
+    "88k DWT LPG — Super Panamax": (86_001, 90_000),
+    "95k DWT LPG — Neo Panamax": (93_000, 97_000),
 }
 
 

@@ -13,7 +13,7 @@ PROMPT TO PASTE INTO CLAUDE CODE:
 Read CLAUDE.md and README.md in this repo first — they explain the
 project and the constraints.
 
-This repo pulls Panama Canal LNG wait-time data from the Vortexa API on
+This repo pulls Panama Canal LPG wait-time data from Vortexa reports on
 a schedule via GitHub Actions and publishes a dashboard to GitHub Pages.
 The code is a first draft written from public documentation and has
 never been run against a real Vortexa account, so some of it is

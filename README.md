@@ -1,7 +1,7 @@
-# Panama Canal LNG Wait Times
+# Panama Canal LPG Wait Times
 
-Tracks Panama Canal transit wait times for LNG carriers in two DWT bands
-(~88,000 DWT and ~95,000 DWT), pulled from Vortexa's Canal Transit dataset,
+Tracks Panama Canal transit wait times for confirmed LPG carriers in three DWT bands
+(~84,000, ~88,000, and ~95,000 DWT), sourced from Vortexa's Panama Canal Report,
 and publishes a dashboard showing:
 
 - current average wait time per band, by direction
@@ -9,6 +9,11 @@ and publishes a dashboard showing:
 - a 5-year seasonal range (min/max/avg by week-of-year) with the past year
   overlaid, so you can see where "now" sits against history
 - a live snapshot of vessels currently in the queue
+
+The working vessel groups are 84k DWT Panamax, 88k DWT Super Panamax,
+and 95k DWT Neo Panamax. The dashboard filters on Vortexa's LPG vessel-family
+classification before applying these DWT bands; DWT alone is not treated as
+proof that a vessel is an LPG carrier.
 
 Everything runs in GitHub — no local machine required, so it works the
 same from any computer.

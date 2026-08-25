@@ -2,7 +2,7 @@
 
 ## What this repo does
 
-Pulls Panama Canal LNG transit wait-time data from the Vortexa API,
+Pulls Panama Canal LPG transit wait-time data from Vortexa reports,
 aggregates it (current averages, weekly trend, 5-year seasonal range),
 and publishes a static dashboard via GitHub Pages. Everything runs on a
 schedule inside GitHub Actions — there is no local/manual run in normal

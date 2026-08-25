@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panama Canal — LNG Transit Wait Times</title>
+<title>Panama Canal — LPG Transit Wait Times</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -238,7 +238,7 @@
 <header>
   <div class="header-inner">
     <div>
-      <h1>Panama Canal — LNG Transit Wait Times</h1>
+      <h1>Panama Canal — LPG Transit Wait Times</h1>
       <p id="updated-line">Loading data…</p>
     </div>
     <div class="export-actions" aria-label="Export dashboard">
@@ -283,7 +283,7 @@
 
 </div>
 
-<footer>Source: Vortexa Panama Canal Report · Braemar plc — LNG Desk</footer>
+<footer>Source: Vortexa Panama Canal Report · Braemar plc — LPG Desk</footer>
 
 <script>
 // ---------------------------------------------------------------------
@@ -296,7 +296,16 @@ const SAMPLE_DATA = {
   data_source: "vortexa_panama_canal_report_email",
   current_window_days: 30,
   dwt_bands: {
-    "88k DWT LNG": {
+    "84k DWT LPG — Panamax": {
+      dwt_range: [82000, 86000],
+      n_transits: 12,
+      avg_wait_days: 1.8,
+      by_direction: {
+        Northbound: { n_transits: 6, avg_wait_days: 1.6 },
+        Southbound: { n_transits: 6, avg_wait_days: 2.0 }
+      }
+    },
+    "88k DWT LPG — Super Panamax": {
       dwt_range: [86000, 90000],
       n_transits: 14,
       avg_wait_days: 2.3,
@@ -305,7 +314,7 @@ const SAMPLE_DATA = {
         Southbound: { n_transits: 7, avg_wait_days: 2.7 }
       }
     },
-    "95k DWT LNG": {
+    "95k DWT LPG — Neo Panamax": {
       dwt_range: [93000, 97000],
       n_transits: 11,
       avg_wait_days: 3.1,
@@ -316,7 +325,7 @@ const SAMPLE_DATA = {
     }
   },
   current_queue: [
-    { vessel_name: "SAMPLE LNG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
+    { vessel_name: "SAMPLE LPG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
   ],
   weekly_history: {} // filled in below by buildSampleWeeklyHistory()
 };
@@ -326,7 +335,11 @@ const SAMPLE_DATA = {
 // is NOT real Vortexa data — it's a smooth synthetic series with a mild
 // upward drift + noise, just to preview the chart shape.
 function buildSampleWeeklyHistory(){
-  const bands = { "88k DWT LNG": 2.2, "95k DWT LNG": 2.9 };
+  const bands = {
+    "84k DWT LPG — Panamax": 1.8,
+    "88k DWT LPG — Super Panamax": 2.2,
+    "95k DWT LPG — Neo Panamax": 2.9
+  };
   const history = {};
   const today = new Date();
 
@@ -415,7 +428,7 @@ async function exportPDF(){
       offset += pageHeight;
       page += 1;
     }
-    pdf.save(`panama-lng-dashboard-${exportStamp()}.pdf`);
+    pdf.save(`panama-lpg-dashboard-${exportStamp()}.pdf`);
   });
 }
 
@@ -425,10 +438,10 @@ async function exportPPTX(){
     if(typeof PptxGenJS === "undefined") throw new Error("PptxGenJS failed to load");
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
-    pptx.author = "Braemar LNG Desk";
+    pptx.author = "Braemar LPG Desk";
     pptx.company = "Braemar plc";
-    pptx.subject = "Panama Canal LNG transit wait times";
-    pptx.title = "Panama Canal — LNG Transit Wait Times";
+    pptx.subject = "Panama Canal LPG transit wait times";
+    pptx.title = "Panama Canal — LPG Transit Wait Times";
     pptx.lang = "en-GB";
 
     const addHeading = (slide, title, subtitle = "") => {
@@ -449,7 +462,7 @@ async function exportPPTX(){
     };
 
     let slide = pptx.addSlide();
-    addHeading(slide, "Panama Canal — LNG Transit Wait Times", document.getElementById("updated-line").textContent);
+    addHeading(slide, "Panama Canal — LPG Transit Wait Times", document.getElementById("updated-line").textContent);
     addCanvas(slide, await captureElement(document.getElementById("cards"), 2), 1.15);
 
     const addElementSlide = async (title, element) => {
@@ -472,7 +485,7 @@ async function exportPPTX(){
     const queueSection = document.getElementById("queue-table").closest("section");
     await addElementSlide("Live vessel queue", queueSection);
 
-    await pptx.writeFile({ fileName:`panama-lng-dashboard-${exportStamp()}.pptx` });
+    await pptx.writeFile({ fileName:`panama-lpg-dashboard-${exportStamp()}.pptx` });
   });
 }
 

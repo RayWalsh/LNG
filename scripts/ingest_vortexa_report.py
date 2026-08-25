@@ -2,6 +2,10 @@
 Ingest a Vortexa Panama Canal Report (.xlsx) into the persistent master
 dataset at data/master_transits.csv.
 
+The master file preserves every vessel in the supplied report. LPG-only
+selection happens in build_dashboard_data.py using the report's
+``vessel_family`` classification; DWT is never used as a cargo-type proxy.
+
 This is the real deal — Vortexa confirmed there is no API access to
 Panama Canal wait times, only this periodic email report. It contains
 exactly the fields the (denied) CanalTransit API endpoint would have

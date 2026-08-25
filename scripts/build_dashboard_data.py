@@ -27,8 +27,9 @@ MASTER_PATH = os.environ.get("MASTER_TRANSITS_PATH", "data/master_transits.csv")
 OUTPUT_JSON = os.environ.get("OUTPUT_JSON_PATH", "site/panama_wait_times.json")
 
 DWT_BANDS = {
-    "88k DWT LNG": (86_000, 90_000),
-    "95k DWT LNG": (93_000, 97_000),
+    "84k DWT LPG — Panamax": (82_000, 86_000),
+    "88k DWT LPG — Super Panamax": (86_001, 90_000),
+    "95k DWT LPG — Neo Panamax": (93_000, 97_000),
 }
 
 CURRENT_WINDOW_DAYS = 30
@@ -40,6 +41,18 @@ def load_master():
         "queue_arrival_time", "canal_entry_time", "canal_exit_time", "booked_date",
     ])
     return df
+
+
+def filter_lpg(df):
+    """Keep confirmed LPG vessels only.
+
+    Vortexa reports have historically supplied the market classification in
+    ``vessel_family``. Matching is deliberately explicit: DWT alone cannot
+    distinguish LPG carriers from LNG carriers or unrelated ship types.
+    """
+    family = df["vessel_family"].fillna("").astype(str)
+    is_lpg = family.str.contains(r"\bLPG\b|liquefied petroleum", case=False, regex=True)
+    return df[is_lpg].copy()
 
 
 def filter_band(df, dwt_min, dwt_max):
@@ -182,8 +195,10 @@ def current_queue(df, dwt_min, dwt_max):
 
 def main():
     print(f"Loading {MASTER_PATH} ...")
-    df = load_master()
-    print(f"  {len(df)} total rows")
+    all_transits = load_master()
+    print(f"  {len(all_transits)} total rows")
+    df = filter_lpg(all_transits)
+    print(f"  {len(df)} confirmed LPG rows")
 
     dwt_bands_out = {}
     weekly_history_out = {}
@@ -216,7 +231,7 @@ def main():
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "data_source": "vortexa_panama_canal_report_email",
         "notes": (
-            "Sourced from Vortexa's periodic Panama Canal Report email "
+            "Confirmed LPG vessels sourced from Vortexa's periodic Panama Canal Report email "
             "export (confirmed by Vortexa: no live API access to this "
             "data). Ingested and merged into a persistent master dataset "
             "on each new upload."
