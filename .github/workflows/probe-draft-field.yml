@@ -1,0 +1,29 @@
+name: Probe draft field availability
+
+# Manual-only diagnostic. Checks whether CargoMovements exposes a draft
+# field (needed for the bunkering-detection idea: filtering out Cristobal
+# stops with a draft change >10cm, which would indicate bunkering rather
+# than a pure canal-transit wait).
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install vortexasdk packaging pandas
+
+      - name: Run draft field probe
+        env:
+          VORTEXA_API_KEY: ${{ secrets.VORTEXA_API_KEY }}
+        run: python3 scripts/probe_draft_field.py
