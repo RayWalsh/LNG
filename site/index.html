@@ -7,72 +7,77 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root{
-    --navy:#0b2340;
-    --navy-2:#123a63;
-    --teal:#0f9a92;
-    --teal-light:#e4f6f4;
-    --ink:#16232f;
-    --muted:#5b6b7a;
-    --line:#dde5ea;
-    --bg:#f4f7f9;
+    /* Braemar brand palette (BRA002 Guidelines, section 03.1) */
+    --forest:#336e63;
+    --forest-light:#e5efec;
+    --ocean:#182432;
+    --ocean-2:#243447;
+    --accent:#2dd782;   /* accent only — not for large fills, per brand guidance */
+    --ink:#182432;
+    --muted:#5c6b72;
+    --line:#e2e6e4;
+    --bg:#f8f6f5;       /* Soft Grey */
     --card:#ffffff;
-    --warn:#c0552b;
+    --warn:#8a4a1a;
   }
   *{box-sizing:border-box;}
   body{
     margin:0;
-    font-family:"Segoe UI", Arial, sans-serif;
+    font-family:"Aeonik", "Inter", -apple-system, "Segoe UI", Arial, sans-serif;
     background:var(--bg);
     color:var(--ink);
   }
   header{
-    background:linear-gradient(135deg, var(--navy) 0%, var(--navy-2) 100%);
+    background:linear-gradient(135deg, var(--ocean) 0%, var(--ocean-2) 100%);
     color:#fff;
-    padding:28px 36px;
+    padding:32px 48px;
   }
   header h1{
     margin:0 0 4px 0;
-    font-size:22px;
+    font-size:24px;
     letter-spacing:.2px;
+    font-weight:600;
   }
   header p{
     margin:0;
-    color:#bcd3e6;
+    color:#a9bac4;
     font-size:13px;
   }
   .wrap{
-    max-width:1100px;
-    margin:0 auto;
-    padding:28px 20px 60px;
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:32px 48px 64px;
   }
   .banner{
-    background:#fff4e9;
-    border:1px solid #f0c9a0;
-    color:#8a4a1a;
+    background:#fdf1e7;
+    border:1px solid #eecda3;
+    color:var(--warn);
     padding:10px 16px;
-    border-radius:6px;
+    border-radius:14px;
     font-size:13px;
     margin-bottom:24px;
   }
   .cards{
     display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(260px,1fr));
-    gap:16px;
+    grid-template-columns:repeat(auto-fit, minmax(280px,1fr));
+    gap:20px;
     margin-bottom:28px;
   }
   .card{
     background:var(--card);
     border:1px solid var(--line);
-    border-radius:10px;
-    padding:20px;
-    border-top:4px solid var(--teal);
+    border-radius:20px;
+    padding:24px;
+    border-top:5px solid var(--forest);
   }
   .card h3{
     margin:0 0 2px 0;
     font-size:14px;
-    color:var(--navy);
+    color:var(--ocean);
     text-transform:uppercase;
     letter-spacing:.4px;
+    font-weight:600;
   }
   .card .sub{
     font-size:12px;
@@ -80,9 +85,9 @@
     margin-bottom:14px;
   }
   .stat{
-    font-size:34px;
+    font-size:36px;
     font-weight:700;
-    color:var(--navy);
+    color:var(--ocean);
     line-height:1;
   }
   .stat span{
@@ -94,52 +99,56 @@
   .dir-row{
     display:flex;
     justify-content:space-between;
-    margin-top:14px;
-    padding-top:12px;
+    margin-top:16px;
+    padding-top:14px;
     border-top:1px solid var(--line);
     font-size:13px;
   }
   .dir-row div b{
-    color:var(--navy);
+    color:var(--ocean);
     font-size:16px;
     display:block;
   }
   section{
     background:var(--card);
     border:1px solid var(--line);
-    border-radius:10px;
-    padding:22px;
+    border-radius:20px;
+    padding:28px;
     margin-bottom:24px;
   }
   section h2{
     margin:0 0 14px 0;
-    font-size:16px;
-    color:var(--navy);
+    font-size:17px;
+    color:var(--ocean);
+    font-weight:600;
   }
   .section-sub{
-    margin:-8px 0 16px 0;
+    margin:-8px 0 18px 0;
     font-size:12px;
     color:var(--muted);
   }
   table{
     width:100%;
-    border-collapse:collapse;
+    border-collapse:separate;
+    border-spacing:0;
     font-size:13px;
   }
   th, td{
     text-align:left;
-    padding:9px 10px;
+    padding:11px 14px;
     border-bottom:1px solid var(--line);
   }
   th{
-    background:var(--teal-light);
-    color:var(--navy);
+    background:var(--forest-light);
+    color:var(--ocean);
     font-weight:600;
     font-size:12px;
     text-transform:uppercase;
     letter-spacing:.3px;
   }
-  tr:hover td{ background:#fafcfd; }
+  th:first-child{ border-top-left-radius:12px; }
+  th:last-child{ border-top-right-radius:12px; }
+  tr:hover td{ background:#fafbfa; }
   .empty{
     color:var(--muted);
     font-size:13px;
@@ -147,21 +156,21 @@
   }
   .badge{
     display:inline-block;
-    padding:2px 8px;
+    padding:3px 10px;
     border-radius:20px;
     font-size:11px;
     font-weight:600;
   }
-  .badge.northbound{ background:#e4f6f4; color:#0f7a73; }
+  .badge.northbound{ background:var(--forest-light); color:var(--forest); }
   .badge.southbound{ background:#eef1fb; color:#3a4fa0; }
   footer{
     text-align:center;
     color:var(--muted);
     font-size:12px;
-    padding:20px;
+    padding:24px;
   }
   .chart-box{
-    max-width:640px;
+    max-width:900px;
     margin:0 auto;
   }
 </style>
@@ -327,8 +336,8 @@ function renderChart(bands){
     });
   });
 
-  const directionColors = { Northbound: "#0f9a92", Southbound: "#123a63" };
-  const fallbackColors = ["#0f9a92", "#123a63", "#c0552b", "#7a5cc0"];
+  const directionColors = { Northbound: "#336e63", Southbound: "#182432" };
+  const fallbackColors = ["#336e63", "#182432", "#2dd782", "#7a5cc0"];
 
   const datasets = allDirections.map((direction, i) => ({
     label: direction,
@@ -337,6 +346,9 @@ function renderChart(bands){
       return d ? d.avg_wait_days : 0;
     }),
     backgroundColor: directionColors[direction] || fallbackColors[i % fallbackColors.length],
+    borderRadius: 10,
+    borderSkipped: false,
+    maxBarThickness: 64,
   }));
 
   const ctx = document.getElementById("waitChart");
@@ -354,7 +366,7 @@ function renderChart(bands){
   });
 }
 
-const BAND_COLORS = ["#0f9a92", "#123a63", "#c0552b", "#7a5cc0"];
+const BAND_COLORS = ["#336e63", "#182432", "#2dd782", "#7a5cc0"];
 
 function renderWeeklyChart(weeklyHistory){
   const canvas = document.getElementById("weeklyChart");
@@ -376,9 +388,13 @@ function renderWeeklyChart(weeklyHistory){
       spanGaps: true,
       borderColor: BAND_COLORS[i % BAND_COLORS.length],
       backgroundColor: BAND_COLORS[i % BAND_COLORS.length],
-      tension: 0.3,
+      tension: 0.4,
+      cubicInterpolationMode: "monotone",
+      borderJoinStyle: "round",
+      borderCapStyle: "round",
       pointRadius: 2,
-      borderWidth: 2,
+      pointHoverRadius: 5,
+      borderWidth: 2.5,
     };
   });
 
@@ -449,6 +465,8 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
             data: minSeries,
             borderWidth: 0,
             pointRadius: 0,
+            tension: 0.4,
+            cubicInterpolationMode: "monotone",
             fill: false,
             order: 4,
           },
@@ -457,6 +475,8 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
             data: maxSeries,
             borderWidth: 0,
             pointRadius: 0,
+            tension: 0.4,
+            cubicInterpolationMode: "monotone",
             backgroundColor: color + "26", // ~15% opacity band fill
             fill: "-1",
             order: 3,
@@ -464,10 +484,12 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
           {
             label: "5-yr average",
             data: avgSeries,
-            borderColor: "#9aa7b2",
+            borderColor: "#9aa7ab",
             borderDash: [4, 3],
             borderWidth: 1.5,
             pointRadius: 0,
+            tension: 0.4,
+            cubicInterpolationMode: "monotone",
             fill: false,
             order: 2,
           },
@@ -478,7 +500,12 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
             backgroundColor: color,
             borderWidth: 2.5,
             pointRadius: 1.5,
+            pointHoverRadius: 5,
             spanGaps: true,
+            tension: 0.4,
+            cubicInterpolationMode: "monotone",
+            borderJoinStyle: "round",
+            borderCapStyle: "round",
             fill: false,
             order: 1,
           },
