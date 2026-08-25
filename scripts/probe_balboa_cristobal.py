@@ -60,8 +60,8 @@ def test_location(location_id, location_name):
 
 
 def main():
-    balboa_id, balboa_name = find_geography("balboa", ["Balboa"])
-    cristobal_id, cristobal_name = find_geography("cristobal", ["Cristobal"])
+    balboa_id, balboa_name = find_geography("balboa", ["Balboa [PA]", "Balboa"])
+    cristobal_id, cristobal_name = find_geography("cristobal", ["Cristobal [PA]", "Cristobal"])
 
     if balboa_id:
         test_location(balboa_id, balboa_name)
