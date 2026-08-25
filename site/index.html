@@ -7,7 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs/dist/pptxgen.bundle.js"></script>
 <style>
   :root{
     /* Braemar brand palette (BRA002 Guidelines, section 03.1) */
@@ -61,7 +61,7 @@
     margin:0 auto;
     padding:22px clamp(16px, 3vw, 40px) 40px;
     display:grid;
-    grid-template-columns:minmax(0, .85fr) minmax(0, 1.15fr);
+    grid-template-columns:1fr;
     gap:16px;
   }
   .export-actions{ display:flex; gap:8px; flex-shrink:0; }
@@ -204,17 +204,16 @@
   .chart-box{
     position:relative;
     width:100%;
-    height:320px;
+    height:440px;
   }
-  .wrap > section:nth-of-type(3),
-  .wrap > section:nth-of-type(4){ grid-column:1 / -1; }
+  .wrap > section{ grid-column:1 / -1; }
   #seasonal-charts{
     display:grid;
-    grid-template-columns:repeat(2, minmax(0,1fr));
+    grid-template-columns:1fr;
     gap:16px;
   }
   .seasonal-widget{ min-width:0; }
-  .seasonal-widget .chart-box{ height:280px; }
+  .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
     .wrap{ grid-template-columns:1fr; }
     .wrap > *{ grid-column:1 !important; }
@@ -225,7 +224,7 @@
     .cards{ grid-template-columns:1fr; }
     .card{ padding:16px; }
     section{ padding:16px; }
-    .chart-box{ height:260px; }
+    .chart-box{ height:300px; }
     .stat{ font-size:28px; }
     .wrap{ gap:12px; }
     .header-inner{ align-items:flex-start; flex-direction:column; gap:12px; }
@@ -423,6 +422,7 @@ async function exportPDF(){
 async function exportPPTX(){
   const button = document.getElementById("pptx-btn");
   await withExportState(button, "Building PPTX…", async () => {
+    if(typeof PptxGenJS === "undefined") throw new Error("PptxGenJS failed to load");
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
     pptx.author = "Braemar LNG Desk";
@@ -452,11 +452,25 @@ async function exportPPTX(){
     addHeading(slide, "Panama Canal — LNG Transit Wait Times", document.getElementById("updated-line").textContent);
     addCanvas(slide, await captureElement(document.getElementById("cards"), 2), 1.15);
 
-    for(const section of document.querySelectorAll(".wrap > section")){
+    const addElementSlide = async (title, element) => {
       slide = pptx.addSlide();
-      addHeading(slide, section.querySelector("h2")?.textContent || "Dashboard");
-      addCanvas(slide, await captureElement(section, 2), 1.02);
+      addHeading(slide, title);
+      addCanvas(slide, await captureElement(element, 2), 1.02);
+    };
+
+    const waitSection = document.getElementById("waitChart").closest("section");
+    const weeklySection = document.getElementById("weeklyChart").closest("section");
+    await addElementSlide("Average wait time by DWT band and direction", waitSection);
+    await addElementSlide("Weekly average wait time — past year", weeklySection);
+
+    const seasonalWidgets = document.querySelectorAll(".seasonal-widget");
+    for(const widget of seasonalWidgets){
+      const label = widget.querySelector("h3")?.textContent || "DWT band";
+      await addElementSlide(`5-year seasonal range — ${label}`, widget);
     }
+
+    const queueSection = document.getElementById("queue-table").closest("section");
+    await addElementSlide("Live vessel queue", queueSection);
 
     await pptx.writeFile({ fileName:`panama-lng-dashboard-${exportStamp()}.pptx` });
   });
