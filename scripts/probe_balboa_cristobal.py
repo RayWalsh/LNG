@@ -30,15 +30,20 @@ def find_geography(term, exact_names):
 
 
 def test_location(location_id, location_name):
-    print(f"--- VoyagesSearchEnriched: voyages at {location_name!r} (last 180 days, wide DWT) ---")
+    print(f"--- VoyagesSearchEnriched: voyages at {location_name!r} (last 365 days, wide DWT) ---")
     now = datetime.utcnow()
-    window_start = now - timedelta(days=180)
+    window_start = now - timedelta(days=365)  # widened from 180 — Balboa returned 0 rows last time
 
     real_columns = [
         "vessel_name", "imo", "dwt", "vessel_class", "voyage_status",
         "start_date", "end_date", "location", "congestion_port",
         "waiting_time", "waiting_commence", "waiting_finished", "duration",
         "arrival_dates", "departure_dates",
+        # Added to disambiguate genuine canal-transit stops (destination
+        # far beyond Panama, e.g. Singapore/NEA) from an actual port call
+        # ENDING at Cristobal (destination == Cristobal/Panama itself).
+        "destination", "destination_port", "destination_country",
+        "final_destination", "final_destination_port", "final_destination_country",
     ]
 
     try:
@@ -54,6 +59,16 @@ def test_location(location_id, location_name):
         print("Columns:", list(df.columns))
         if len(df):
             print(df.to_string())
+
+            # Quick manual-inspection flag: does the final destination's
+            # country look like it's NOT Panama? That's a rough signal
+            # for "this was a genuine transit, not a port call ending
+            # here" — worth eyeballing against the real rows above rather
+            # than trusting blindly, since country-name matching is crude.
+            dest_col = "FINAL DESTINATION COUNTRY" if "FINAL DESTINATION COUNTRY" in df.columns else None
+            if dest_col:
+                print(f"\n--- {dest_col} values (for manual transit-vs-port-call judgement) ---")
+                print(df[dest_col].value_counts(dropna=False))
     except Exception as e:  # noqa: BLE001
         print(f"ERROR ({type(e).__name__}) — {e}")
     print()
