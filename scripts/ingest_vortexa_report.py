@@ -4,7 +4,8 @@ dataset at data/master_transits.csv.
 
 The master file preserves every vessel in the supplied report. LPG-only
 selection happens in build_dashboard_data.py using the report's
-``vessel_family`` classification; DWT is never used as a cargo-type proxy.
+``vessel_type`` classification. Cubic cargo volumes are retained so the
+dashboard can estimate each vessel's 84k/88k/95k CBM size group.
 
 This is the real deal — Vortexa confirmed there is no API access to
 Panama Canal wait times, only this periodic email report. It contains
@@ -42,7 +43,7 @@ SOURCE_SHEETS = ["historic", "waiting", "future"]
 # Columns we keep from each sheet. All three sheets share this shape.
 KEEP_COLUMNS = [
     "id", "vessel_name", "vessel_imo", "vessel_class", "vessel_family",
-    "vessel_category", "vessel_deadweight",
+    "vessel_type", "vessel_category", "vessel_deadweight", "cubic_metres",
     "queue_arrival_time", "canal_entry_time", "canal_exit_time",
     "wait_time", "booked", "booked_date", "direction", "lock",
     "voyage_status", "origin_port", "destination_port",

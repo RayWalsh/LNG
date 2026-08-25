@@ -9,7 +9,7 @@ real `direction` field (not a Laden/Ballast proxy) and real
 queue_arrival_time / canal_entry_time — so all of the following are now
 properly computable, not approximated:
 
-  - current average wait time by DWT band, by real direction
+  - current average wait time by estimated cubic-capacity band and direction
   - weekly trend over the past year
   - a genuine 5-year seasonal range (the master dataset spans back to
     2020, not just the past year)
@@ -19,6 +19,7 @@ properly computable, not approximated:
 
 import os
 import json
+import re
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -26,10 +27,10 @@ import pandas as pd
 MASTER_PATH = os.environ.get("MASTER_TRANSITS_PATH", "data/master_transits.csv")
 OUTPUT_JSON = os.environ.get("OUTPUT_JSON_PATH", "site/panama_wait_times.json")
 
-DWT_BANDS = {
-    "84k DWT LPG — Panamax": (82_000, 86_000),
-    "88k DWT LPG — Super Panamax": (86_001, 90_000),
-    "95k DWT LPG — Neo Panamax": (93_000, 97_000),
+CAPACITY_BANDS_CBM = {
+    "84k CBM LPG — Panamax": (82_000, 86_000),
+    "88k CBM LPG — Super Panamax": (86_001, 90_000),
+    "95k CBM LPG — Neo Panamax": (93_000, 97_000),
 }
 
 CURRENT_WINDOW_DAYS = 30
@@ -46,20 +47,40 @@ def load_master():
 def filter_lpg(df):
     """Keep confirmed LPG vessels only.
 
-    Vortexa reports have historically supplied the market classification in
-    ``vessel_family``. Matching is deliberately explicit: DWT alone cannot
-    distinguish LPG carriers from LNG carriers or unrelated ship types.
+    The report explicitly labels these rows as ``LPG Carriers`` in
+    ``vessel_type``. ``VLGC/VLEC`` is retained as a fallback for master files
+    created before vessel_type was added to the ingestion schema.
     """
-    family = df["vessel_family"].fillna("").astype(str)
-    is_lpg = family.str.contains(r"\bLPG\b|liquefied petroleum", case=False, regex=True)
+    vessel_type = df.get("vessel_type", pd.Series("", index=df.index)).fillna("").astype(str)
+    family = df.get("vessel_family", pd.Series("", index=df.index)).fillna("").astype(str)
+    is_lpg = vessel_type.str.fullmatch("LPG Carriers", case=False) | family.eq("VLGC/VLEC")
     return df[is_lpg].copy()
 
 
-def filter_band(df, dwt_min, dwt_max):
+def cubic_total(value):
+    """Sum parcel volumes stored in strings such as ``[39788. 41160.]``."""
+    if pd.isna(value):
+        return pd.NA
+    numbers = re.findall(r"[-+]?\d*\.?\d+", str(value))
+    return sum(float(number) for number in numbers) if numbers else pd.NA
+
+
+def add_estimated_capacity(df):
+    """Use each vessel's maximum observed cargo volume as a capacity proxy."""
+    df = df.copy()
+    cubic_values = df.get("cubic_metres", pd.Series(pd.NA, index=df.index))
+    df["observed_cubic_metres"] = cubic_values.map(cubic_total)
+    by_imo = df.groupby("vessel_imo", dropna=True)["observed_cubic_metres"].transform("max")
+    by_name = df.groupby("vessel_name", dropna=True)["observed_cubic_metres"].transform("max")
+    df["estimated_capacity_cbm"] = by_imo.fillna(by_name)
+    return df
+
+
+def filter_band(df, capacity_min, capacity_max):
     return df[
-        df["vessel_deadweight"].notna()
-        & (df["vessel_deadweight"] >= dwt_min)
-        & (df["vessel_deadweight"] <= dwt_max)
+        df["estimated_capacity_cbm"].notna()
+        & (df["estimated_capacity_cbm"] >= capacity_min)
+        & (df["estimated_capacity_cbm"] <= capacity_max)
     ]
 
 
@@ -69,15 +90,15 @@ def completed_transits(df):
     return df[df["canal_entry_time"].notna() & df["wait_time"].notna()]
 
 
-def summarise_current(df, dwt_min, dwt_max):
+def summarise_current(df, capacity_min, capacity_max):
     now = pd.Timestamp.now('UTC').tz_localize(None)
     window_start = now - timedelta(days=CURRENT_WINDOW_DAYS)
 
-    band = filter_band(completed_transits(df), dwt_min, dwt_max)
+    band = filter_band(completed_transits(df), capacity_min, capacity_max)
     band = band[band["canal_entry_time"] >= window_start]
 
     result = {
-        "dwt_range": [dwt_min, dwt_max],
+        "capacity_range_cbm": [capacity_min, capacity_max],
         "window_days": CURRENT_WINDOW_DAYS,
         "n_transits": int(len(band)),
         "avg_wait_days": None,
@@ -93,11 +114,11 @@ def summarise_current(df, dwt_min, dwt_max):
     return result
 
 
-def summarise_weekly(df, dwt_min, dwt_max):
+def summarise_weekly(df, capacity_min, capacity_max):
     now = pd.Timestamp.now('UTC').tz_localize(None)
     cutoff = now - timedelta(days=PAST_YEAR_DAYS)
 
-    band = filter_band(completed_transits(df), dwt_min, dwt_max)
+    band = filter_band(completed_transits(df), capacity_min, capacity_max)
     band = band[band["canal_entry_time"] >= cutoff].copy()
 
     band["week_start"] = band["canal_entry_time"].dt.to_period("W-SUN").dt.start_time
@@ -123,13 +144,13 @@ def summarise_weekly(df, dwt_min, dwt_max):
     return weeks
 
 
-def summarise_seasonal_range(df, dwt_min, dwt_max):
+def summarise_seasonal_range(df, capacity_min, capacity_max):
     """Real 5-year seasonal range — finally genuinely computable, since
     the master dataset's historic sheet goes back to 2020."""
     now = pd.Timestamp.now('UTC').tz_localize(None)
     cutoff = now - timedelta(days=PAST_YEAR_DAYS)
 
-    band = filter_band(completed_transits(df), dwt_min, dwt_max)
+    band = filter_band(completed_transits(df), capacity_min, capacity_max)
     band = band[band["canal_entry_time"] < cutoff].copy()  # everything OLDER than the past year
 
     if not len(band):
@@ -159,10 +180,10 @@ def summarise_seasonal_range(df, dwt_min, dwt_max):
     return weeks
 
 
-def current_queue(df, dwt_min, dwt_max):
+def current_queue(df, capacity_min, capacity_max):
     """REAL live queue, from the 'waiting' sheet — actual named vessels
     currently waiting, not an empty placeholder."""
-    band = filter_band(df, dwt_min, dwt_max)
+    band = filter_band(df, capacity_min, capacity_max)
     waiting = band[band["source_sheet"] == "waiting"].copy()
 
     if not len(waiting):
@@ -185,6 +206,7 @@ def current_queue(df, dwt_min, dwt_max):
             "vessel_name": row["vessel_name"],
             "vessel_imo": None if pd.isna(row["vessel_imo"]) else int(row["vessel_imo"]),
             "vessel_dead_weight": None if pd.isna(row["vessel_deadweight"]) else int(row["vessel_deadweight"]),
+            "estimated_capacity_cbm": None if pd.isna(row["estimated_capacity_cbm"]) else int(row["estimated_capacity_cbm"]),
             "direction": None if pd.isna(row["direction"]) else str(row["direction"]).capitalize(),
             "lock": row["lock"],
             "queue_arrival_time": str(row["queue_arrival_time"]),
@@ -197,31 +219,31 @@ def main():
     print(f"Loading {MASTER_PATH} ...")
     all_transits = load_master()
     print(f"  {len(all_transits)} total rows")
-    df = filter_lpg(all_transits)
+    df = add_estimated_capacity(filter_lpg(all_transits))
     print(f"  {len(df)} confirmed LPG rows")
 
-    dwt_bands_out = {}
+    capacity_bands_out = {}
     weekly_history_out = {}
     seasonal_range_out = {}
     current_queue_out = []
 
-    for label, (dwt_min, dwt_max) in DWT_BANDS.items():
-        print(f"\n{label} ({dwt_min:,}-{dwt_max:,} DWT)")
+    for label, (capacity_min, capacity_max) in CAPACITY_BANDS_CBM.items():
+        print(f"\n{label} ({capacity_min:,}-{capacity_max:,} CBM)")
 
-        current = summarise_current(df, dwt_min, dwt_max)
-        dwt_bands_out[label] = current
+        current = summarise_current(df, capacity_min, capacity_max)
+        capacity_bands_out[label] = current
         print(f"  Current ({CURRENT_WINDOW_DAYS}d): {current['n_transits']} transits, "
               f"avg {current['avg_wait_days']} days")
 
-        weekly = summarise_weekly(df, dwt_min, dwt_max)
+        weekly = summarise_weekly(df, capacity_min, capacity_max)
         weekly_history_out[label] = weekly
         print(f"  Weekly history: {len(weekly)} weeks with data")
 
-        seasonal = summarise_seasonal_range(df, dwt_min, dwt_max)
+        seasonal = summarise_seasonal_range(df, capacity_min, capacity_max)
         seasonal_range_out[label] = seasonal
         print(f"  Seasonal range: {len(seasonal)} week-of-year buckets")
 
-        queue = current_queue(df, dwt_min, dwt_max)
+        queue = current_queue(df, capacity_min, capacity_max)
         current_queue_out.extend(queue)
         print(f"  Currently waiting: {len(queue)} vessels")
 
@@ -231,13 +253,14 @@ def main():
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "data_source": "vortexa_panama_canal_report_email",
         "notes": (
-            "Confirmed LPG vessels sourced from Vortexa's periodic Panama Canal Report email "
+            "Confirmed LPG vessels sourced from Vortexa's periodic Panama Canal Report email. "
+            "Capacity bands use each vessel's maximum observed cargo cubic volume as a working proxy. "
             "export (confirmed by Vortexa: no live API access to this "
             "data). Ingested and merged into a persistent master dataset "
             "on each new upload."
         ),
         "current_window_days": CURRENT_WINDOW_DAYS,
-        "dwt_bands": dwt_bands_out,
+        "capacity_bands": capacity_bands_out,
         "weekly_history": weekly_history_out,
         "seasonal_range": seasonal_range_out,
         "current_queue": current_queue_out,

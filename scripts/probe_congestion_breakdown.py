@@ -11,10 +11,10 @@ from datetime import datetime, timedelta
 
 from vortexasdk import Geographies, VoyagesCongestionBreakdown
 
-DWT_BANDS = {
-    "84k DWT LPG — Panamax": (82_000, 86_000),
-    "88k DWT LPG — Super Panamax": (86_001, 90_000),
-    "95k DWT LPG — Neo Panamax": (93_000, 97_000),
+CAPACITY_BANDS_CBM = {
+    "84k CBM LPG — Panamax": (82_000, 86_000),
+    "88k CBM LPG — Super Panamax": (86_001, 90_000),
+    "95k CBM LPG — Neo Panamax": (93_000, 97_000),
 }
 
 
@@ -44,7 +44,7 @@ def find_panama_canal_waypoint():
     return None
 
 
-def test_panama_by_dwt_band(location_value):
+def test_panama_by_capacity_band(location_value):
     now = datetime.utcnow()
     ninety_days_ago = now - timedelta(days=90)
 
@@ -59,16 +59,16 @@ def test_panama_by_dwt_band(location_value):
     # the right thing.
     breakdown_property_candidates = ["port", "waypoint", "location", "canal", "chokepoint"]
 
-    for band_label, (dwt_min, dwt_max) in DWT_BANDS.items():
+    for band_label, (capacity_min, capacity_max) in CAPACITY_BANDS_CBM.items():
         for bp in breakdown_property_candidates:
-            print(f"--- Panama Canal congestion, {band_label} ({dwt_min}-{dwt_max} DWT), breakdown_property={bp!r} ---")
+            print(f"--- Panama Canal congestion, {band_label} ({capacity_min}-{capacity_max} CBM), breakdown_property={bp!r} ---")
             try:
                 df = VoyagesCongestionBreakdown().search(
                     time_min=ninety_days_ago,
                     time_max=now,
                     locations=location_value,
-                    vessel_dwt_min=dwt_min,
-                    vessel_dwt_max=dwt_max,
+                    vessel_cubic_capacity_min=capacity_min,
+                    vessel_cubic_capacity_max=capacity_max,
                     breakdown_property=bp,
                 ).to_df()
                 print(f"{len(df)} rows")
@@ -89,7 +89,7 @@ def main():
         return
 
     print(f"Using locations={panama_canal_id!r} (Panama Canal waypoint)\n")
-    test_panama_by_dwt_band(panama_canal_id)
+    test_panama_by_capacity_band(panama_canal_id)
 
 
 if __name__ == "__main__":

@@ -85,8 +85,8 @@ API key:
 - `filter_canal` must be the exact string `'panama_canal'`.
 - `filter_direction` must be `'northbound'` or `'southbound'`.
 - `filter_lock` must be `'panamax'` or `'neopanamax'`.
-- DWT filtering can be pushed server-side via
-  `filter_vessel_dead_weight_min` / `_max` — no need to pull everything
+- Cubic-capacity filtering can be pushed server-side via
+  `filter_vessel_cubic_capacity_min` / `_max` — no need to pull everything
   and filter locally in pandas.
 - `packaging` must be installed alongside `vortexasdk` and `pandas` — the
   SDK imports it internally but doesn't always pull it in as a
@@ -97,7 +97,7 @@ API key:
 
 - Whether a full 5-year pull needs chunking/pagination, or if `to_df()`
   handles it in one call — untested at that volume so far.
-- Whether real transits exist at all in the 88k/95k DWT bands (a probe
+- Whether real transits exist at all in the 84k/88k/95k CBM bands (a probe
   run against a real window will confirm row counts).
 - Whether `canal_entry_time`, `queue_arrival_time` etc. actually parse
   cleanly as datetimes in the returned DataFrame, or need explicit
@@ -124,7 +124,7 @@ API key:
 
 ## Conventions
 
-- DWT bands, lookback windows, and the week-of-year anchoring logic are
+- CBM capacity bands, lookback windows, and the week-of-year anchoring logic are
   all configured near the top of `fetch_panama_wait_times.py` under
   `CONFIG` — change values there rather than editing logic further down.
 - The dashboard (`site/index.html`) is a single self-contained file (no

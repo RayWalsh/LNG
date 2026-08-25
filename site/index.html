@@ -259,7 +259,7 @@
   <div class="cards" id="cards"></div>
 
   <section>
-    <h2>Average wait time by DWT band and direction</h2>
+    <h2>Average wait time by cubic-capacity band and direction</h2>
     <div class="chart-box"><canvas id="waitChart"></canvas></div>
   </section>
 
@@ -277,7 +277,7 @@
 
   <section>
     <h2>Live vessel queue</h2>
-    <p class="section-sub">Vessels currently waiting to transit, within the tracked DWT bands.</p>
+    <p class="section-sub">Vessels currently waiting to transit, within the tracked cubic-capacity bands.</p>
     <div id="queue-table"></div>
   </section>
 
@@ -295,9 +295,9 @@ const SAMPLE_DATA = {
   generated_at_utc: new Date().toISOString(),
   data_source: "vortexa_panama_canal_report_email",
   current_window_days: 30,
-  dwt_bands: {
-    "84k DWT LPG — Panamax": {
-      dwt_range: [82000, 86000],
+  capacity_bands: {
+    "84k CBM LPG — Panamax": {
+      capacity_range_cbm: [82000, 86000],
       n_transits: 12,
       avg_wait_days: 1.8,
       by_direction: {
@@ -305,8 +305,8 @@ const SAMPLE_DATA = {
         Southbound: { n_transits: 6, avg_wait_days: 2.0 }
       }
     },
-    "88k DWT LPG — Super Panamax": {
-      dwt_range: [86000, 90000],
+    "88k CBM LPG — Super Panamax": {
+      capacity_range_cbm: [86001, 90000],
       n_transits: 14,
       avg_wait_days: 2.3,
       by_direction: {
@@ -314,8 +314,8 @@ const SAMPLE_DATA = {
         Southbound: { n_transits: 7, avg_wait_days: 2.7 }
       }
     },
-    "95k DWT LPG — Neo Panamax": {
-      dwt_range: [93000, 97000],
+    "95k CBM LPG — Neo Panamax": {
+      capacity_range_cbm: [93000, 97000],
       n_transits: 11,
       avg_wait_days: 3.1,
       by_direction: {
@@ -325,7 +325,7 @@ const SAMPLE_DATA = {
     }
   },
   current_queue: [
-    { vessel_name: "SAMPLE LPG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
+    { vessel_name: "SAMPLE LPG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 54500, estimated_capacity_cbm: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
   ],
   weekly_history: {} // filled in below by buildSampleWeeklyHistory()
 };
@@ -336,9 +336,9 @@ const SAMPLE_DATA = {
 // upward drift + noise, just to preview the chart shape.
 function buildSampleWeeklyHistory(){
   const bands = {
-    "84k DWT LPG — Panamax": 1.8,
-    "88k DWT LPG — Super Panamax": 2.2,
-    "95k DWT LPG — Neo Panamax": 2.9
+    "84k CBM LPG — Panamax": 1.8,
+    "88k CBM LPG — Super Panamax": 2.2,
+    "95k CBM LPG — Neo Panamax": 2.9
   };
   const history = {};
   const today = new Date();
@@ -473,12 +473,12 @@ async function exportPPTX(){
 
     const waitSection = document.getElementById("waitChart").closest("section");
     const weeklySection = document.getElementById("weeklyChart").closest("section");
-    await addElementSlide("Average wait time by DWT band and direction", waitSection);
+    await addElementSlide("Average wait time by cubic-capacity band and direction", waitSection);
     await addElementSlide("Weekly average wait time — past year", weeklySection);
 
     const seasonalWidgets = document.querySelectorAll(".seasonal-widget");
     for(const widget of seasonalWidgets){
-      const label = widget.querySelector("h3")?.textContent || "DWT band";
+      const label = widget.querySelector("h3")?.textContent || "Capacity band";
       await addElementSlide(`5-year seasonal range — ${label}`, widget);
     }
 
@@ -502,7 +502,7 @@ function renderCards(bands){
   const cardsEl = document.getElementById("cards");
   cardsEl.innerHTML = "";
   Object.entries(bands).forEach(([label, b]) => {
-    const [lo, hi] = b.dwt_range;
+    const [lo, hi] = b.capacity_range_cbm;
     const dirEntries = Object.entries(b.by_direction || {});
     const dirRows = dirEntries.map(([direction, d]) => `
       <div><span class="badge ${direction.toLowerCase()}">${direction}</span><b>${d.avg_wait_days}d</b></div>
@@ -511,7 +511,7 @@ function renderCards(bands){
     card.className = "card";
     card.innerHTML = `
       <h3>${label}</h3>
-      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} DWT · ${b.n_transits ?? 0} transits in window</div>
+      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} CBM · ${b.n_transits ?? 0} transits in window</div>
       <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
       <div class="dir-row">${dirRows || "<div>No breakdown available</div>"}</div>
     `;
@@ -725,14 +725,14 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
 function renderQueue(queue){
   const el = document.getElementById("queue-table");
   if(!queue || !queue.length){
-    el.innerHTML = `<div class="empty">No vessels currently in queue within the tracked DWT bands.</div>`;
+    el.innerHTML = `<div class="empty">No vessels currently in queue within the tracked cubic-capacity bands.</div>`;
     return;
   }
   const rows = queue.map(v => `
     <tr>
       <td>${v.vessel_name ?? "–"}</td>
       <td>${v.vessel_imo ?? "–"}</td>
-      <td>${v.vessel_dead_weight ? v.vessel_dead_weight.toLocaleString() : "–"}</td>
+      <td>${v.estimated_capacity_cbm ? v.estimated_capacity_cbm.toLocaleString() : "–"}</td>
       <td>${v.direction ?? "–"}</td>
       <td>${v.lock ?? "–"}</td>
       <td>${v.hours_waiting_so_far ? (v.hours_waiting_so_far/24).toFixed(1) + "d" : "–"}</td>
@@ -741,7 +741,7 @@ function renderQueue(queue){
   el.innerHTML = `
     <table>
       <thead>
-        <tr><th>Vessel</th><th>IMO</th><th>DWT</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
+        <tr><th>Vessel</th><th>IMO</th><th>Est. CBM</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
@@ -751,8 +751,8 @@ function renderQueue(queue){
 function render(data, isSample){
   document.getElementById("updated-line").textContent = fmtUpdated(data.generated_at_utc, isSample);
   document.getElementById("sample-banner").style.display = isSample ? "block" : "none";
-  renderCards(data.dwt_bands);
-  renderChart(data.dwt_bands);
+  renderCards(data.capacity_bands);
+  renderChart(data.capacity_bands);
   renderWeeklyChart(data.weekly_history);
   renderSeasonalCharts(data.seasonal_range, data.weekly_history);
   renderQueue(data.current_queue);
