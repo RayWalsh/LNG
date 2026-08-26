@@ -1,5 +1,27 @@
 # Panama Canal LPG Dashboard — Project Memory
 
+## Delivery phases
+
+### Phase 1 — complete
+
+Phase 1 is accepted as complete. It covers the branded Panama Canal Intelligence dashboard, LPG/LNG/Tanker segment selection, vessel-class and direction analysis, selectable wait periods, current-year seasonality, live queue, vessel detail, CSV/PDF/PPTX exports, chart copying, and the agreed navigation and presentation system.
+
+### Phase 2 — Canal conditions and pressure index
+
+Phase 2 will add three operational drivers of waiting time:
+
+1. Maximum authorised draft, stored as effective-dated changes by lock/category.
+2. Transit capacity and actual transits per day, distinguishing published slot availability from realised traffic.
+3. Auction price/premium and auction utilisation, separated by the applicable ACP vessel group and lock.
+
+The proposed **Panama Canal Pressure Index** is a transparent 0–100 composite in which a higher number means tighter Canal conditions. Each input must first be transformed so its direction is consistent (lower draft = more pressure; fewer slots/transits = more pressure; higher auction premium = more pressure), then normalised before aggregation. The initial version should use explicit equal or commercially agreed weights; later weights may be calibrated against out-of-sample waiting times. Auction prices should use a log transform or robust percentile because bids are highly skewed.
+
+Do not describe the index as causal. Auction prices, transit capacity, and waits can respond to the same demand or hydrological shock, and auction prices may be endogenous. Show the three components beside the composite so users can see what moved it.
+
+The index should be calculated by relevant segment/lock where data permits, rather than imposing one universal score. The Phase 2 UI should add a **Canal Conditions** tab with component histories, index methodology, data freshness, and event annotations. Wait-time charts should offer an optional index overlay on a secondary axis, off by default.
+
+Preferred sources are official ACP Advisories/Notices for effective-dated draft and slot changes, ACP operations statistics for realised transits and auction utilisation, and ACP public auction history for awarded premiums. Every observation needs source URL, publication date, effective date, category/lock applicability, value, unit, and revision status.
+
 ## Presentation and navigation
 
 - The product name is **Panama Canal Intelligence**.
