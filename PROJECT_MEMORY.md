@@ -7,6 +7,10 @@
 - Overview charts and the period-filterable vessel table live on separate tabs to keep the dashboard compact.
 - Summary cards use squared corners and a full green outline; chart panels use a subtle shadow.
 - Every chart provides a copy-to-clipboard control for pasting as a PNG.
+- The Overview/Vessel detail tabs, segment selector, and icon-only PDF/PPTX exports share one toolbar row. Icon actions provide hover tooltips.
+- The selected segment (LPG, LNG, or Tankers) controls both overview and vessel-detail data and is stated in the vessel-detail view.
+- Summary cards are equal square tiles and remain on one desktop row, including the five tanker classes.
+- PDF export uses landscape pages and captures each visible view block at the full printable width, paginating long tables rather than shrinking the whole dashboard.
 - Seasonal background bands must use category values rather than auto-skipped tick indexes. Winter is weeks 1–9 and 49–53; summer is weeks 23–35, using only a very light tint so data remains legible.
 
 ## Dashboard period and vessel-detail definitions

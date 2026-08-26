@@ -41,7 +41,7 @@
     margin:0 auto;
     display:flex;
     align-items:center;
-    justify-content:space-between;
+    justify-content:flex-start;
     gap:20px;
   }
   .brand{display:flex;align-items:center;gap:14px;min-width:0;}
@@ -66,23 +66,26 @@
     grid-template-columns:1fr;
     gap:16px;
   }
+  .toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
   .export-actions{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .segment-control{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.35px;}
   .export-btn{
     appearance:none;
-    border:1px solid rgba(255,255,255,.3);
+    border:1px solid var(--line);
     border-radius:9px;
-    background:rgba(255,255,255,.08);
-    color:#fff;
-    padding:8px 12px;
+    background:#fff;
+    color:var(--ocean);
+    width:36px;height:36px;padding:0;
+    display:inline-grid;place-items:center;
     font:600 12px/1 inherit;
     cursor:pointer;
   }
-  .export-btn:hover{ background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.5); }
+  .export-btn:hover{ background:var(--forest-light); border-color:#b8cbc5; }
   .export-btn:disabled{ opacity:.55; cursor:wait; }
   .market-select{
     min-width:164px;
     padding:9px 38px 9px 13px;
-    border:1px solid rgba(255,255,255,.42);
+    border:1px solid var(--line);
     border-radius:9px;
     background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23182432' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 13px center;
     color:var(--ocean);
@@ -103,7 +106,8 @@
   }
   .cards{
     display:grid;
-    grid-template-columns:repeat(2, minmax(0,1fr));
+    grid-template-columns:repeat(var(--card-count,3), minmax(150px,220px));
+    justify-content:center;
     gap:16px;
     margin-bottom:0;
     grid-column:1 / -1;
@@ -113,6 +117,10 @@
     border:2px solid var(--forest);
     border-radius:4px;
     padding:18px 20px;
+    aspect-ratio:1 / 1;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
     box-shadow:0 3px 10px rgba(24,36,50,.07);
   }
   .card h3{
@@ -283,6 +291,8 @@
   .copy-chart{border:1px solid var(--line);border-radius:7px;width:31px;height:31px;background:#fff;color:var(--ocean);cursor:pointer;display:inline-grid;place-items:center;font-size:15px;box-shadow:0 1px 3px rgba(24,36,50,.1);}
   .copy-chart:hover{background:var(--forest-light);border-color:#b8cbc5;}
   .widget-actions{display:flex;align-items:center;gap:8px;}
+  [data-tooltip]{position:relative;}
+  [data-tooltip]:hover::after{content:attr(data-tooltip);position:absolute;right:0;top:calc(100% + 7px);z-index:20;white-space:nowrap;background:var(--ocean);color:#fff;border-radius:6px;padding:6px 8px;font-size:11px;font-weight:500;box-shadow:0 3px 8px rgba(0,0,0,.18);}
   .weekly-widget .chart-box,
   .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
@@ -292,16 +302,16 @@
   }
   @media (max-width:620px){
     header h1{ font-size:20px; }
-    .cards{ grid-template-columns:1fr; }
+    .cards{ grid-template-columns:repeat(2,minmax(0,1fr)); }
     .card{ padding:16px; }
     section{ padding:16px; }
     .chart-box{ height:300px; }
     .stat{ font-size:28px; }
     .wrap{ gap:12px; }
     .header-inner{ align-items:flex-start; flex-direction:column; gap:12px; }
-    .export-actions{ width:100%; flex-wrap:wrap; }
-    .market-select{flex:1 0 100%;}
-    .export-btn{ flex:1; }
+    .toolbar{align-items:stretch;}
+    .export-actions{width:100%;}
+    .market-select{flex:1;}
   }
 </style>
 </head>
@@ -316,20 +326,22 @@
         <p id="updated-line">Loading data…</p>
       </div>
     </div>
-    <div class="export-actions" aria-label="Export dashboard">
-      <select id="market-select" class="market-select" aria-label="Vessel market"></select>
-      <button class="export-btn" id="pdf-btn" type="button">Export PDF</button>
-      <button class="export-btn" id="pptx-btn" type="button">Export PPTX</button>
-    </div>
   </div>
 </header>
 
 <div class="wrap">
 
-  <nav class="tabs" aria-label="Dashboard sections">
-    <button class="tab-btn active" type="button" data-tab="overview" aria-selected="true">Overview</button>
-    <button class="tab-btn" type="button" data-tab="vessels" aria-selected="false">Vessel detail</button>
-  </nav>
+  <div class="toolbar">
+    <nav class="tabs" aria-label="Dashboard sections">
+      <button class="tab-btn active" type="button" data-tab="overview" aria-selected="true">Overview</button>
+      <button class="tab-btn" type="button" data-tab="vessels" aria-selected="false">Vessel detail</button>
+    </nav>
+    <div class="export-actions" aria-label="Segment and exports">
+      <label class="segment-control">Segment<select id="market-select" class="market-select" aria-label="Segment"></select></label>
+      <button class="export-btn" id="pdf-btn" type="button" data-tooltip="Export PDF" aria-label="Export PDF"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3h7l4 4v14H7V3Z" stroke="currentColor" stroke-width="1.7"/><path d="M14 3v5h5M9.5 16.5h5M9.5 13h5" stroke="currentColor" stroke-width="1.7"/></svg></button>
+      <button class="export-btn" id="pptx-btn" type="button" data-tooltip="Export PowerPoint" aria-label="Export PowerPoint"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="1" stroke="currentColor" stroke-width="1.7"/><path d="M8 16V8h3.2a2.5 2.5 0 0 1 0 5H8m8-5v8m-2-8h4" stroke="currentColor" stroke-width="1.7"/></svg></button>
+    </div>
+  </div>
 
   <div class="tab-view" id="overview-view">
 
@@ -372,7 +384,7 @@
 
   <section>
     <h2>Vessel detail by period</h2>
-    <p class="section-sub">Waiting vessels use queue-arrival date; completed transits use canal-entry date. The source does not provide a dedicated loading date.</p>
+    <p class="section-sub"><span id="detail-segment-note"></span> Waiting vessels use queue-arrival date; completed transits use canal-entry date. The source does not provide a dedicated loading date.</p>
     <div class="detail-controls">
       <label>From<input id="detail-from" type="date"></label>
       <label>To<input id="detail-to" type="date"></label>
@@ -514,7 +526,7 @@ async function captureElement(element, scale = 2){
 
 async function withExportState(button, label, task){
   const buttons = document.querySelectorAll(".export-btn");
-  const original = button.textContent;
+  const original = button.innerHTML;
   buttons.forEach(b => b.disabled = true);
   button.textContent = label;
   document.body.classList.add("exporting");
@@ -525,7 +537,7 @@ async function withExportState(button, label, task){
     alert("The export could not be created. Please try again.");
   }finally{
     document.body.classList.remove("exporting");
-    button.textContent = original;
+    button.innerHTML = original;
     buttons.forEach(b => b.disabled = false);
   }
 }
@@ -533,21 +545,35 @@ async function withExportState(button, label, task){
 async function exportPDF(){
   const button = document.getElementById("pdf-btn");
   await withExportState(button, "Building PDF…", async () => {
-    const canvas = await captureElement(document.body, 2);
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4", compress:true });
+    const pdf = new jsPDF({ orientation:"landscape", unit:"mm", format:"a4", compress:true });
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const imageHeight = canvas.height * pageWidth / canvas.width;
-    const image = canvas.toDataURL("image/jpeg", .92);
-    let offset = 0;
-    let page = 0;
-    while(offset < imageHeight){
-      if(page > 0) pdf.addPage();
-      pdf.addImage(image, "JPEG", 0, -offset, pageWidth, imageHeight, undefined, "FAST");
-      offset += pageHeight;
-      page += 1;
-    }
+    const margin = 8;
+    const headerHeight = 15;
+    const contentWidth = pageWidth - margin * 2;
+    const contentHeight = pageHeight - headerHeight - margin;
+    let pageCount = 0;
+    const addHeader = title => {
+      pdf.setFillColor(24,36,50); pdf.rect(0,0,pageWidth,headerHeight,"F");
+      pdf.setTextColor(255,255,255); pdf.setFontSize(14); pdf.text(title,margin,9.5);
+      pdf.setFontSize(8); pdf.text(document.getElementById("updated-line").textContent,pageWidth-margin,9.5,{align:"right"});
+    };
+    const addElement = async element => {
+      const canvas = await captureElement(element,2);
+      const image = canvas.toDataURL("image/jpeg",.94);
+      const imageHeight = canvas.height * contentWidth / canvas.width;
+      const title = `Panama Canal Intelligence — ${currentMarket}`;
+      for(let offset=0; offset<imageHeight; offset+=contentHeight){
+        if(pageCount++) pdf.addPage();
+        pdf.addImage(image,"JPEG",margin,headerHeight-offset,contentWidth,imageHeight,undefined,"FAST");
+        pdf.setFillColor(248,246,245); pdf.rect(0,0,pageWidth,headerHeight,"F");
+        addHeader(title);
+      }
+    };
+    const activeView = document.querySelector(".tab-view:not([hidden])");
+    const elements = [...activeView.children].filter(element => element.offsetParent !== null);
+    for(const element of elements) await addElement(element);
     pdf.save(`panama-${currentMarket.toLowerCase()}-dashboard-${exportStamp()}.pdf`);
   });
 }
@@ -661,6 +687,7 @@ function fmtUpdated(iso, isSample){
 function renderCards(bands){
   const cardsEl = document.getElementById("cards");
   cardsEl.innerHTML = "";
+  cardsEl.style.setProperty("--card-count",Object.keys(bands).length);
   Object.entries(bands).forEach(([label, b]) => {
     const dirEntries = Object.entries(b.by_direction || {});
     const dirRows = dirEntries.map(([direction, d]) => `
@@ -1027,6 +1054,7 @@ function renderMarket(market){
   const selected = appData.markets[market];
   currentPeriod = selected.default_period || "3m";
   document.querySelector("header h1").textContent = "Panama Canal Intelligence";
+  document.getElementById("detail-segment-note").textContent = `${market} segment.`;
   renderPeriodControls(selected);
   renderPeriodSummary(selected);
   renderWeeklyCharts(selected.weekly_history);
