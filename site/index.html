@@ -107,7 +107,7 @@
   .cards{
     display:grid;
     grid-template-columns:repeat(var(--card-count,3), minmax(150px,220px));
-    justify-content:center;
+    justify-content:end;
     gap:16px;
     margin-bottom:0;
     grid-column:1 / -1;
@@ -121,7 +121,7 @@
     display:flex;
     flex-direction:column;
     justify-content:space-between;
-    box-shadow:0 3px 10px rgba(24,36,50,.07);
+    box-shadow:0 2px 7px rgba(24,36,50,.06);
   }
   .card h3{
     margin:0 0 2px 0;
@@ -164,17 +164,19 @@
   section{
     background:var(--card);
     border:1px solid var(--line);
-    border-radius:14px;
+    border-radius:6px;
     padding:20px;
     margin-bottom:0;
     min-width:0;
-    box-shadow:0 3px 12px rgba(24,36,50,.08);
+    box-shadow:0 2px 8px rgba(24,36,50,.06);
   }
   section h2{
     margin:0 0 14px 0;
     font-size:17px;
     color:var(--ocean);
     font-weight:600;
+    border-left:3px solid var(--forest);
+    padding-left:10px;
   }
   .section-sub{
     margin:-8px 0 18px 0;
@@ -251,12 +253,12 @@
     gap:3px;
     padding:3px;
     border:1px solid var(--border);
-    border-radius:9px;
+    border-radius:5px;
     background:#f3f5f4;
   }
   .direction-toggle button{
     border:0;
-    border-radius:6px;
+    border-radius:3px;
     padding:6px 10px;
     background:transparent;
     color:var(--muted);
@@ -272,8 +274,8 @@
   }
   .section-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
   .section-heading h2{margin:0;}
-  .period-toggle{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:9px;background:#f3f5f4;}
-  .period-toggle button{border:0;border-radius:6px;padding:7px 11px;background:transparent;color:var(--muted);font:600 11px/1 inherit;cursor:pointer;}
+  .period-toggle{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:5px;background:#f3f5f4;}
+  .period-toggle button{border:0;border-radius:3px;padding:7px 11px;background:transparent;color:var(--muted);font:600 11px/1 inherit;cursor:pointer;}
   .period-toggle button.active{background:#fff;color:var(--ocean);box-shadow:0 1px 3px rgba(24,36,50,.14);}
   .season-key{display:flex;gap:12px;align-items:center;margin:-8px 0 14px;font-size:11px;color:var(--muted);}
   .season-swatch{width:13px;height:13px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-2px;}
@@ -283,14 +285,18 @@
   .detail-controls input,.detail-controls select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink);font:inherit;}
   .action-btn{border:0;border-radius:8px;padding:9px 12px;background:var(--forest);color:#fff;font:600 12px/1 inherit;cursor:pointer;}
   .result-count{font-size:12px;color:var(--muted);margin:0 0 10px;}
-  .tabs{display:flex;gap:5px;padding:4px;background:#e9edeb;border-radius:10px;width:max-content;max-width:100%;}
-  .tab-btn{border:0;border-radius:7px;padding:9px 15px;background:transparent;color:var(--muted);font:600 12px/1 inherit;cursor:pointer;}
+  .tabs{display:flex;gap:5px;padding:4px;background:#e9edeb;border-radius:6px;width:max-content;max-width:100%;}
+  .tab-btn{border:0;border-radius:3px;padding:9px 15px;background:transparent;color:var(--muted);font:600 12px/1 inherit;cursor:pointer;}
   .tab-btn.active{background:#fff;color:var(--ocean);box-shadow:0 1px 4px rgba(24,36,50,.14);}
   .tab-view{display:grid;grid-template-columns:1fr;gap:16px;}
   .tab-view[hidden]{display:none;}
   .copy-chart{border:1px solid var(--line);border-radius:7px;width:31px;height:31px;background:#fff;color:var(--ocean);cursor:pointer;display:inline-grid;place-items:center;font-size:15px;box-shadow:0 1px 3px rgba(24,36,50,.1);}
   .copy-chart:hover{background:var(--forest-light);border-color:#b8cbc5;}
   .widget-actions{display:flex;align-items:center;gap:8px;}
+  .summary-block{display:grid;gap:8px;}
+  .cards-context{display:flex;justify-content:flex-end;align-items:baseline;gap:9px;color:var(--muted);font-size:12px;}
+  .cards-context strong{color:var(--ocean);font-size:13px;font-weight:600;}
+  .cards-period{display:inline-block;border-bottom:2px solid var(--forest);padding:0 1px 3px;color:var(--forest);font-weight:700;}
   [data-tooltip]{position:relative;}
   [data-tooltip]:hover::after{content:attr(data-tooltip);position:absolute;right:0;top:calc(100% + 7px);z-index:20;white-space:nowrap;background:var(--ocean);color:#fff;border-radius:6px;padding:6px 8px;font-size:11px;font-weight:500;box-shadow:0 3px 8px rgba(0,0,0,.18);}
   .weekly-widget .chart-box,
@@ -351,7 +357,10 @@
     <code>panama_wait_times.json</code> to see live figures.
   </div>
 
-  <div class="cards" id="cards"></div>
+  <div class="summary-block">
+    <div class="cards-context"><strong>Average wait summary</strong><span>Period:</span><span class="cards-period" id="cards-period-label">3 months</span></div>
+    <div class="cards" id="cards"></div>
+  </div>
 
   <section>
     <div class="section-heading"><h2>Average wait time by vessel class and direction</h2><div class="widget-actions"><div id="period-toggle" class="period-toggle" role="group" aria-label="Averaging period"></div><button class="copy-chart" type="button" data-chart="waitChart" title="Copy chart" aria-label="Copy average wait chart">⧉</button></div></div>
@@ -697,7 +706,7 @@ function renderCards(bands){
     card.className = "card";
     card.innerHTML = `
       <h3>${label}</h3>
-      <div class="sub">${b.range_label} · ${b.n_transits ?? 0} transits in window</div>
+      <div class="sub">${b.range_label} · ${b.n_transits ?? 0} transits · ${periodDisplay(currentPeriod)}</div>
       <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
       <div class="dir-row">${dirRows || "<div>No breakdown available</div>"}</div>
     `;
@@ -1000,9 +1009,8 @@ function escapeHtml(value){
 }
 
 function renderPeriodControls(selected){
-  const labels = {"3m":"3 months","6m":"6 months","1y":"1 year","5y":"5 years"};
   const toggle = document.getElementById("period-toggle");
-  toggle.innerHTML = Object.keys(selected.period_summaries || {"3m":selected.classes}).map(key => `<button type="button" data-period="${key}" class="${key===currentPeriod?'active':''}">${labels[key] || key}</button>`).join("");
+  toggle.innerHTML = Object.keys(selected.period_summaries || {"3m":selected.classes}).map(key => `<button type="button" data-period="${key}" class="${key===currentPeriod?'active':''}">${periodDisplay(key)}</button>`).join("");
   toggle.querySelectorAll("button").forEach(button => button.onclick = () => {
     currentPeriod = button.dataset.period;
     renderPeriodControls(selected);
@@ -1010,10 +1018,15 @@ function renderPeriodControls(selected){
   });
 }
 
+function periodDisplay(key){
+  return ({"3m":"3 months","6m":"6 months","1y":"1 year","5y":"5 years"})[key] || key;
+}
+
 function renderPeriodSummary(selected){
   const bands = selected.period_summaries?.[currentPeriod] || selected.classes;
   const days = Object.values(bands)[0]?.window_days;
   document.getElementById("period-note").textContent = `Completed transits during the latest ${days?.toLocaleString() || "selected"} days.`;
+  document.getElementById("cards-period-label").textContent = periodDisplay(currentPeriod);
   renderCards(bands); renderChart(bands);
 }
 

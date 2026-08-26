@@ -11,6 +11,8 @@
 - The selected segment (LPG, LNG, or Tankers) controls both overview and vessel-detail data and is stated in the vessel-detail view.
 - Summary cards are equal square tiles and remain on one desktop row, including the five tanker classes.
 - PDF export uses landscape pages and captures each visible view block at the full printable width, paginating long tables rather than shrinking the whole dashboard.
+- Avoid a generic SaaS/AI-dashboard appearance: retain Braemar colours but use sharper panel geometry, restrained shadows, fewer pill controls, editorial section rules, and intentionally asymmetric alignment.
+- Summary cards align to the right. The active averaging period is shown immediately above them and repeated inside each card, updating with the shared period switch.
 - Seasonal background bands must use category values rather than auto-skipped tick indexes. Winter is weeks 1–9 and 49–53; summer is weeks 23–35, using only a very light tint so data remains legible.
 
 ## Dashboard period and vessel-detail definitions
