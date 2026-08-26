@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panama Canal — Vessel Transit Wait Times</title>
+<title>Panama Canal Intelligence</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -44,6 +44,8 @@
     justify-content:space-between;
     gap:20px;
   }
+  .brand{display:flex;align-items:center;gap:14px;min-width:0;}
+  .brand-mark{width:46px;height:46px;object-fit:contain;flex:0 0 auto;}
   header h1{
     margin:0 0 4px 0;
     font-size:24px;
@@ -64,7 +66,7 @@
     grid-template-columns:1fr;
     gap:16px;
   }
-  .export-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .export-actions{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
   .export-btn{
     appearance:none;
     border:1px solid rgba(255,255,255,.3);
@@ -78,14 +80,15 @@
   .export-btn:hover{ background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.5); }
   .export-btn:disabled{ opacity:.55; cursor:wait; }
   .market-select{
-    min-width:150px;
-    padding:9px 12px;
-    border:1px solid rgba(255,255,255,.28);
-    border-radius:8px;
-    background:#fff;
-    color:var(--navy);
-    font:inherit;
-    font-weight:600;
+    min-width:164px;
+    padding:9px 38px 9px 13px;
+    border:1px solid rgba(255,255,255,.42);
+    border-radius:9px;
+    background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23182432' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 13px center;
+    color:var(--ocean);
+    font:600 12px/1 inherit;
+    appearance:none;
+    cursor:pointer;
   }
   body.exporting .export-actions{ visibility:hidden; }
   .banner{
@@ -107,10 +110,10 @@
   }
   .card{
     background:var(--card);
-    border:1px solid var(--line);
-    border-radius:14px;
+    border:2px solid var(--forest);
+    border-radius:4px;
     padding:18px 20px;
-    border-top:3px solid var(--forest);
+    box-shadow:0 3px 10px rgba(24,36,50,.07);
   }
   .card h3{
     margin:0 0 2px 0;
@@ -157,6 +160,7 @@
     padding:20px;
     margin-bottom:0;
     min-width:0;
+    box-shadow:0 3px 12px rgba(24,36,50,.08);
   }
   section h2{
     margin:0 0 14px 0;
@@ -224,7 +228,7 @@
     gap:16px;
   }
   .weekly-widget,
-  .seasonal-widget{ min-width:0; }
+  .seasonal-widget{ min-width:0;padding:14px;border:1px solid var(--line);border-radius:10px;box-shadow:0 2px 8px rgba(24,36,50,.07); }
   .widget-head{
     display:flex;
     align-items:center;
@@ -271,6 +275,14 @@
   .detail-controls input,.detail-controls select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink);font:inherit;}
   .action-btn{border:0;border-radius:8px;padding:9px 12px;background:var(--forest);color:#fff;font:600 12px/1 inherit;cursor:pointer;}
   .result-count{font-size:12px;color:var(--muted);margin:0 0 10px;}
+  .tabs{display:flex;gap:5px;padding:4px;background:#e9edeb;border-radius:10px;width:max-content;max-width:100%;}
+  .tab-btn{border:0;border-radius:7px;padding:9px 15px;background:transparent;color:var(--muted);font:600 12px/1 inherit;cursor:pointer;}
+  .tab-btn.active{background:#fff;color:var(--ocean);box-shadow:0 1px 4px rgba(24,36,50,.14);}
+  .tab-view{display:grid;grid-template-columns:1fr;gap:16px;}
+  .tab-view[hidden]{display:none;}
+  .copy-chart{border:1px solid var(--line);border-radius:7px;width:31px;height:31px;background:#fff;color:var(--ocean);cursor:pointer;display:inline-grid;place-items:center;font-size:15px;box-shadow:0 1px 3px rgba(24,36,50,.1);}
+  .copy-chart:hover{background:var(--forest-light);border-color:#b8cbc5;}
+  .widget-actions{display:flex;align-items:center;gap:8px;}
   .weekly-widget .chart-box,
   .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
@@ -287,7 +299,8 @@
     .stat{ font-size:28px; }
     .wrap{ gap:12px; }
     .header-inner{ align-items:flex-start; flex-direction:column; gap:12px; }
-    .export-actions{ width:100%; }
+    .export-actions{ width:100%; flex-wrap:wrap; }
+    .market-select{flex:1 0 100%;}
     .export-btn{ flex:1; }
   }
 </style>
@@ -296,9 +309,12 @@
 
 <header>
   <div class="header-inner">
-    <div>
-      <h1>Panama Canal — Vessel Transit Wait Times</h1>
-      <p id="updated-line">Loading data…</p>
+    <div class="brand">
+      <img class="brand-mark" src="Braemar_Bravo_Mark_White.png" alt="Braemar">
+      <div>
+        <h1>Panama Canal Intelligence</h1>
+        <p id="updated-line">Loading data…</p>
+      </div>
     </div>
     <div class="export-actions" aria-label="Export dashboard">
       <select id="market-select" class="market-select" aria-label="Vessel market"></select>
@@ -310,6 +326,13 @@
 
 <div class="wrap">
 
+  <nav class="tabs" aria-label="Dashboard sections">
+    <button class="tab-btn active" type="button" data-tab="overview" aria-selected="true">Overview</button>
+    <button class="tab-btn" type="button" data-tab="vessels" aria-selected="false">Vessel detail</button>
+  </nav>
+
+  <div class="tab-view" id="overview-view">
+
   <div class="banner" id="sample-banner">
     Showing sample/placeholder data. Run <code>fetch_panama_wait_times.py</code>
     with your Vortexa API key and serve this file alongside the resulting
@@ -319,7 +342,7 @@
   <div class="cards" id="cards"></div>
 
   <section>
-    <div class="section-heading"><h2>Average wait time by vessel class and direction</h2><div id="period-toggle" class="period-toggle" role="group" aria-label="Averaging period"></div></div>
+    <div class="section-heading"><h2>Average wait time by vessel class and direction</h2><div class="widget-actions"><div id="period-toggle" class="period-toggle" role="group" aria-label="Averaging period"></div><button class="copy-chart" type="button" data-chart="waitChart" title="Copy chart" aria-label="Copy average wait chart">⧉</button></div></div>
     <p class="section-sub" id="period-note"></p>
     <div class="chart-box"><canvas id="waitChart"></canvas></div>
   </section>
@@ -343,6 +366,10 @@
     <div id="queue-table"></div>
   </section>
 
+  </div>
+
+  <div class="tab-view" id="vessels-view" hidden>
+
   <section>
     <h2>Vessel detail by period</h2>
     <p class="section-sub">Waiting vessels use queue-arrival date; completed transits use canal-entry date. The source does not provide a dedicated loading date.</p>
@@ -356,6 +383,7 @@
     <p class="result-count" id="detail-count"></p>
     <div id="vessel-detail"></div>
   </section>
+  </div>
 
 </div>
 
@@ -533,7 +561,7 @@ async function exportPPTX(){
     pptx.author = "Braemar";
     pptx.company = "Braemar plc";
     pptx.subject = `Panama Canal ${currentMarket} transit wait times`;
-    pptx.title = `Panama Canal — ${currentMarket} Transit Wait Times`;
+    pptx.title = `Panama Canal Intelligence — ${currentMarket}`;
     pptx.lang = "en-GB";
 
     const addHeading = (slide, title, subtitle = "") => {
@@ -554,7 +582,7 @@ async function exportPPTX(){
     };
 
     let slide = pptx.addSlide();
-    addHeading(slide, `Panama Canal — ${currentMarket} Transit Wait Times`, document.getElementById("updated-line").textContent);
+    addHeading(slide, `Panama Canal Intelligence — ${currentMarket}`, document.getElementById("updated-line").textContent);
     addCanvas(slide, await captureElement(document.getElementById("cards"), 2), 1.15);
 
     const addElementSlide = async (title, element) => {
@@ -587,6 +615,42 @@ async function exportPPTX(){
 
 document.getElementById("pdf-btn").addEventListener("click", exportPDF);
 document.getElementById("pptx-btn").addEventListener("click", exportPPTX);
+
+document.querySelectorAll(".tab-btn").forEach(button => button.addEventListener("click", () => {
+  document.querySelectorAll(".tab-btn").forEach(other => {
+    const active = other === button;
+    other.classList.toggle("active",active);
+    other.setAttribute("aria-selected",String(active));
+  });
+  document.getElementById("overview-view").hidden = button.dataset.tab !== "overview";
+  document.getElementById("vessels-view").hidden = button.dataset.tab !== "vessels";
+}));
+
+async function copyChart(button){
+  const target = button.closest(".weekly-widget, .seasonal-widget, section");
+  if(!target || !navigator.clipboard || typeof ClipboardItem === "undefined"){
+    alert("Chart copying is not supported by this browser. Export PDF or PPTX instead.");
+    return;
+  }
+  const original = button.textContent;
+  button.textContent = "…";
+  try{
+    const canvas = await captureElement(target,2);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve,"image/png"));
+    await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);
+    button.textContent = "✓";
+    setTimeout(() => button.textContent = original,1200);
+  }catch(error){
+    console.error(error);
+    button.textContent = original;
+    alert("The chart could not be copied. Your browser may require clipboard permission.");
+  }
+}
+
+document.addEventListener("click", event => {
+  const button = event.target.closest(".copy-chart");
+  if(button) copyChart(button);
+});
 
 function fmtUpdated(iso, isSample){
   const d = new Date(iso);
@@ -695,7 +759,7 @@ function renderWeeklyCharts(weeklyHistory){
     const wrap = document.createElement("div");
     wrap.className = "weekly-widget";
     wrap.dataset.direction = "Combined";
-    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>${directionToggle()}</div>
+    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3><div class="widget-actions">${directionToggle()}<button class="copy-chart" type="button" title="Copy chart" aria-label="Copy ${label} weekly chart">⧉</button></div></div>
       <div class="chart-box"><canvas></canvas></div>`;
     container.appendChild(wrap);
     const canvas = wrap.querySelector("canvas");
@@ -743,11 +807,11 @@ const seasonBandsPlugin = {
       const indices = chart.data.labels.map((label,i) => ({week:Number(String(label).replace(/\D/g,"")),i})).filter(v => v.week >= startWeek && v.week <= endWeek);
       if(!indices.length) return;
       const step = x.width / Math.max(chart.data.labels.length,1);
-      const left = Math.max(chartArea.left, x.getPixelForTick(indices[0].i) - step/2);
-      const right = Math.min(chartArea.right, x.getPixelForTick(indices[indices.length-1].i) + step/2);
+      const left = Math.max(chartArea.left, x.getPixelForValue(indices[0].i) - step/2);
+      const right = Math.min(chartArea.right, x.getPixelForValue(indices[indices.length-1].i) + step/2);
       ctx.save(); ctx.fillStyle=color; ctx.fillRect(left,chartArea.top,right-left,chartArea.bottom-chartArea.top); ctx.restore();
     };
-    shade(1,9,"rgba(151,194,224,.18)"); shade(23,35,"rgba(244,197,84,.16)"); shade(49,53,"rgba(151,194,224,.18)");
+    shade(1,9,"rgba(151,194,224,.07)"); shade(23,35,"rgba(244,197,84,.06)"); shade(49,53,"rgba(151,194,224,.07)");
   }
 };
 
@@ -769,7 +833,7 @@ function renderSeasonalCharts(seasonalRange){
     const wrap = document.createElement("div");
     wrap.className = "seasonal-widget";
     wrap.dataset.direction = "Combined";
-    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>${directionToggle()}</div>
+    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3><div class="widget-actions">${directionToggle()}<button class="copy-chart" type="button" title="Copy chart" aria-label="Copy ${label} seasonal chart">⧉</button></div></div>
       <div class="chart-box"><canvas></canvas></div>`;
     container.appendChild(wrap);
     const canvas = wrap.querySelector("canvas");
@@ -962,7 +1026,7 @@ function renderMarket(market){
   currentMarket = market;
   const selected = appData.markets[market];
   currentPeriod = selected.default_period || "3m";
-  document.querySelector("header h1").textContent = `Panama Canal — ${market} Transit Wait Times`;
+  document.querySelector("header h1").textContent = "Panama Canal Intelligence";
   renderPeriodControls(selected);
   renderPeriodSummary(selected);
   renderWeeklyCharts(selected.weekly_history);

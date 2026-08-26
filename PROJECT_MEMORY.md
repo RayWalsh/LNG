@@ -1,5 +1,14 @@
 # Panama Canal LPG Dashboard — Project Memory
 
+## Presentation and navigation
+
+- The product name is **Panama Canal Intelligence**.
+- The Braemar white Bravo mark appears at the top left of the dark header.
+- Overview charts and the period-filterable vessel table live on separate tabs to keep the dashboard compact.
+- Summary cards use squared corners and a full green outline; chart panels use a subtle shadow.
+- Every chart provides a copy-to-clipboard control for pasting as a PNG.
+- Seasonal background bands must use category values rather than auto-skipped tick indexes. Winter is weeks 1–9 and 49–53; summer is weeks 23–35, using only a very light tint so data remains legible.
+
 ## Dashboard period and vessel-detail definitions
 
 - Headline averages offer trailing 3-month (90-day), 6-month (182-day), 1-year (365-day), and 5-year (1,826-day) windows; 3 months is the default.
