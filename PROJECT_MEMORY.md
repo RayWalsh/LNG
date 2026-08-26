@@ -9,6 +9,10 @@
 
 ## Vessel groups
 
+The dashboard has a market selector with **LPG as the default**, plus LNG and
+Tankers. Changing market refreshes cards, current comparison, weekly history,
+seasonal history, queue and exports.
+
 | Representative capacity | Working class | Initial band |
 | ---: | --- | ---: |
 | 84,000 CBM | Panamax | 82,000–86,000 CBM |
@@ -27,6 +31,10 @@ differ from the 88k CBM Super Panamax and 95k CBM Neo Panamax LPG groups.
 Compare like-for-like periods and directions. Always report sample sizes and,
 where possible, average, median, and the wait-time distribution. Pricing is a
 separate measure and must not be presented as evidence of a waiting-time difference.
+
+LNG initially uses the original 88k and 95k DWT groups. Tankers use Vortexa's
+commercial classes: MR1, MR2, LR1, LR2/Aframax and Suezmax. Do not apply LPG
+CBM bands to LNG or tanker vessels.
 
 Weekly and seasonal sections show one chart per capacity group. Each chart defaults
 to the combined result and provides a compact switch for Combined, Northbound, or

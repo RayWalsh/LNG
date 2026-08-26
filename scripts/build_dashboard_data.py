@@ -27,10 +27,23 @@ import pandas as pd
 MASTER_PATH = os.environ.get("MASTER_TRANSITS_PATH", "data/master_transits.csv")
 OUTPUT_JSON = os.environ.get("OUTPUT_JSON_PATH", "site/panama_wait_times.json")
 
-CAPACITY_BANDS_CBM = {
-    "84k CBM LPG — Panamax": (82_000, 86_000),
-    "88k CBM LPG — Super Panamax": (86_001, 90_000),
-    "95k CBM LPG — Neo Panamax": (93_000, 97_000),
+MARKET_GROUPS = {
+    "LPG": [
+        {"label": "84k CBM — Panamax", "field": "estimated_capacity_cbm", "min": 82_000, "max": 86_000, "range_label": "82,000–86,000 CBM"},
+        {"label": "88k CBM — Super Panamax", "field": "estimated_capacity_cbm", "min": 86_001, "max": 90_000, "range_label": "86,001–90,000 CBM"},
+        {"label": "95k CBM — Neo Panamax", "field": "estimated_capacity_cbm", "min": 93_000, "max": 97_000, "range_label": "93,000–97,000 CBM"},
+    ],
+    "LNG": [
+        {"label": "88k DWT LNG", "field": "vessel_deadweight", "min": 86_000, "max": 90_000, "range_label": "86,000–90,000 DWT"},
+        {"label": "95k DWT LNG", "field": "vessel_deadweight", "min": 93_000, "max": 97_000, "range_label": "93,000–97,000 DWT"},
+    ],
+    "Tankers": [
+        {"label": "MR1", "classes": ["MR1", "Handysize"], "range_label": "MR1 / Handysize"},
+        {"label": "MR2", "classes": ["MR2", "Handymax"], "range_label": "MR2 / Handymax"},
+        {"label": "LR1", "classes": ["LR1", "Panamax"], "range_label": "LR1 / Panamax"},
+        {"label": "LR2 / Aframax", "classes": ["LR2", "Aframax"], "range_label": "LR2 / Aframax"},
+        {"label": "Suezmax", "classes": ["Suezmax", "LR3"], "range_label": "Suezmax / LR3"},
+    ],
 }
 
 CURRENT_WINDOW_DAYS = 30
@@ -57,6 +70,17 @@ def filter_lpg(df):
     return df[is_lpg].copy()
 
 
+def filter_market(df, market):
+    vessel_type = df.get("vessel_type", pd.Series("", index=df.index)).fillna("").astype(str)
+    if market == "LPG":
+        return add_estimated_capacity(filter_lpg(df))
+    if market == "LNG":
+        return df[vessel_type.str.fullmatch("LNG Carriers", case=False)].copy()
+    if market == "Tankers":
+        return df[vessel_type.str.fullmatch("Oil Tankers", case=False)].copy()
+    return df.iloc[0:0].copy()
+
+
 def cubic_total(value):
     """Sum parcel volumes stored in strings such as ``[39788. 41160.]``."""
     if pd.isna(value):
@@ -76,12 +100,11 @@ def add_estimated_capacity(df):
     return df
 
 
-def filter_band(df, capacity_min, capacity_max):
-    return df[
-        df["estimated_capacity_cbm"].notna()
-        & (df["estimated_capacity_cbm"] >= capacity_min)
-        & (df["estimated_capacity_cbm"] <= capacity_max)
-    ]
+def filter_group(df, spec):
+    if "classes" in spec:
+        return df[df["vessel_class"].isin(spec["classes"])].copy()
+    field = spec["field"]
+    return df[df[field].notna() & df[field].between(spec["min"], spec["max"])].copy()
 
 
 def completed_transits(df):
@@ -90,15 +113,15 @@ def completed_transits(df):
     return df[df["canal_entry_time"].notna() & df["wait_time"].notna()]
 
 
-def summarise_current(df, capacity_min, capacity_max):
+def summarise_current(band, range_label):
     now = pd.Timestamp.now('UTC').tz_localize(None)
     window_start = now - timedelta(days=CURRENT_WINDOW_DAYS)
 
-    band = filter_band(completed_transits(df), capacity_min, capacity_max)
+    band = completed_transits(band)
     band = band[band["canal_entry_time"] >= window_start]
 
     result = {
-        "capacity_range_cbm": [capacity_min, capacity_max],
+        "range_label": range_label,
         "window_days": CURRENT_WINDOW_DAYS,
         "n_transits": int(len(band)),
         "avg_wait_days": None,
@@ -114,11 +137,11 @@ def summarise_current(df, capacity_min, capacity_max):
     return result
 
 
-def summarise_weekly(df, capacity_min, capacity_max):
+def summarise_weekly(band):
     now = pd.Timestamp.now('UTC').tz_localize(None)
     cutoff = now - timedelta(days=PAST_YEAR_DAYS)
 
-    band = filter_band(completed_transits(df), capacity_min, capacity_max)
+    band = completed_transits(band)
     band = band[band["canal_entry_time"] >= cutoff].copy()
 
     band["week_start"] = band["canal_entry_time"].dt.to_period("W-SUN").dt.start_time
@@ -144,12 +167,12 @@ def summarise_weekly(df, capacity_min, capacity_max):
     return weeks
 
 
-def summarise_seasonal_range(df, capacity_min, capacity_max):
+def summarise_seasonal_range(band):
     """Five-year seasonal ranges for combined, northbound and southbound."""
     now = pd.Timestamp.now('UTC').tz_localize(None)
     cutoff = now - timedelta(days=PAST_YEAR_DAYS)
 
-    band = filter_band(completed_transits(df), capacity_min, capacity_max)
+    band = completed_transits(band)
     band = band[band["canal_entry_time"] < cutoff].copy()  # everything OLDER than the past year
 
     if not len(band):
@@ -185,10 +208,9 @@ def summarise_seasonal_range(df, capacity_min, capacity_max):
     return output
 
 
-def current_queue(df, capacity_min, capacity_max):
+def current_queue(band):
     """REAL live queue, from the 'waiting' sheet — actual named vessels
     currently waiting, not an empty placeholder."""
-    band = filter_band(df, capacity_min, capacity_max)
     waiting = band[band["source_sheet"] == "waiting"].copy()
 
     if not len(waiting):
@@ -211,7 +233,7 @@ def current_queue(df, capacity_min, capacity_max):
             "vessel_name": row["vessel_name"],
             "vessel_imo": None if pd.isna(row["vessel_imo"]) else int(row["vessel_imo"]),
             "vessel_dead_weight": None if pd.isna(row["vessel_deadweight"]) else int(row["vessel_deadweight"]),
-            "estimated_capacity_cbm": None if pd.isna(row["estimated_capacity_cbm"]) else int(row["estimated_capacity_cbm"]),
+            "estimated_capacity_cbm": None if "estimated_capacity_cbm" not in row or pd.isna(row["estimated_capacity_cbm"]) else int(row["estimated_capacity_cbm"]),
             "direction": None if pd.isna(row["direction"]) else str(row["direction"]).capitalize(),
             "lock": row["lock"],
             "queue_arrival_time": str(row["queue_arrival_time"]),
@@ -224,52 +246,44 @@ def main():
     print(f"Loading {MASTER_PATH} ...")
     all_transits = load_master()
     print(f"  {len(all_transits)} total rows")
-    df = add_estimated_capacity(filter_lpg(all_transits))
-    print(f"  {len(df)} confirmed LPG rows")
-
-    capacity_bands_out = {}
-    weekly_history_out = {}
-    seasonal_range_out = {}
-    current_queue_out = []
-
-    for label, (capacity_min, capacity_max) in CAPACITY_BANDS_CBM.items():
-        print(f"\n{label} ({capacity_min:,}-{capacity_max:,} CBM)")
-
-        current = summarise_current(df, capacity_min, capacity_max)
-        capacity_bands_out[label] = current
-        print(f"  Current ({CURRENT_WINDOW_DAYS}d): {current['n_transits']} transits, "
-              f"avg {current['avg_wait_days']} days")
-
-        weekly = summarise_weekly(df, capacity_min, capacity_max)
-        weekly_history_out[label] = weekly
-        print(f"  Weekly history: {len(weekly)} weeks with data")
-
-        seasonal = summarise_seasonal_range(df, capacity_min, capacity_max)
-        seasonal_range_out[label] = seasonal
-        seasonal_weeks = sum(len(weeks) for weeks in seasonal.values())
-        print(f"  Seasonal range: {seasonal_weeks} directional week-of-year buckets")
-
-        queue = current_queue(df, capacity_min, capacity_max)
-        current_queue_out.extend(queue)
-        print(f"  Currently waiting: {len(queue)} vessels")
-
-    current_queue_out.sort(key=lambda v: v["hours_waiting_so_far"], reverse=True)
+    markets_out = {}
+    for market, specs in MARKET_GROUPS.items():
+        market_df = filter_market(all_transits, market)
+        print(f"\n{market}: {len(market_df)} rows")
+        classes_out = {}
+        weekly_out = {}
+        seasonal_out = {}
+        queue_out = []
+        for spec in specs:
+            label = spec["label"]
+            group = filter_group(market_df, spec)
+            current = summarise_current(group, spec["range_label"])
+            classes_out[label] = current
+            weekly_out[label] = summarise_weekly(group)
+            seasonal_out[label] = summarise_seasonal_range(group)
+            queue_out.extend(current_queue(group))
+            print(f"  {label}: {len(group)} rows; {current['n_transits']} current transits")
+        queue_out.sort(key=lambda v: v["hours_waiting_so_far"], reverse=True)
+        markets_out[market] = {
+            "classes": classes_out,
+            "weekly_history": weekly_out,
+            "seasonal_range": seasonal_out,
+            "current_queue": queue_out,
+        }
 
     output = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "data_source": "vortexa_panama_canal_report_email",
         "notes": (
-            "Confirmed LPG vessels sourced from Vortexa's periodic Panama Canal Report email. "
-            "Capacity bands use each vessel's maximum observed cargo cubic volume as a working proxy. "
+            "LPG, LNG and oil tanker vessels sourced from Vortexa's periodic Panama Canal Report email. "
+            "LPG capacity bands use each vessel's maximum observed cargo cubic volume as a working proxy. "
             "export (confirmed by Vortexa: no live API access to this "
             "data). Ingested and merged into a persistent master dataset "
             "on each new upload."
         ),
         "current_window_days": CURRENT_WINDOW_DAYS,
-        "capacity_bands": capacity_bands_out,
-        "weekly_history": weekly_history_out,
-        "seasonal_range": seasonal_range_out,
-        "current_queue": current_queue_out,
+        "default_market": "LPG",
+        "markets": markets_out,
     }
 
     os.makedirs(os.path.dirname(OUTPUT_JSON) or ".", exist_ok=True)

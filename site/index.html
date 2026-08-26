@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Panama Canal — LPG Transit Wait Times</title>
+<title>Panama Canal — Vessel Transit Wait Times</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -77,6 +77,16 @@
   }
   .export-btn:hover{ background:rgba(255,255,255,.16); border-color:rgba(255,255,255,.5); }
   .export-btn:disabled{ opacity:.55; cursor:wait; }
+  .market-select{
+    min-width:150px;
+    padding:9px 12px;
+    border:1px solid rgba(255,255,255,.28);
+    border-radius:8px;
+    background:#fff;
+    color:var(--navy);
+    font:inherit;
+    font-weight:600;
+  }
   body.exporting .export-actions{ visibility:hidden; }
   .banner{
     background:#fdf1e7;
@@ -274,10 +284,11 @@
 <header>
   <div class="header-inner">
     <div>
-      <h1>Panama Canal — LPG Transit Wait Times</h1>
+      <h1>Panama Canal — Vessel Transit Wait Times</h1>
       <p id="updated-line">Loading data…</p>
     </div>
     <div class="export-actions" aria-label="Export dashboard">
+      <select id="market-select" class="market-select" aria-label="Vessel market"></select>
       <button class="export-btn" id="pdf-btn" type="button">Export PDF</button>
       <button class="export-btn" id="pptx-btn" type="button">Export PPTX</button>
     </div>
@@ -295,31 +306,31 @@
   <div class="cards" id="cards"></div>
 
   <section>
-    <h2>Average wait time by cubic-capacity band and direction</h2>
+    <h2>Average wait time by vessel class and direction</h2>
     <div class="chart-box"><canvas id="waitChart"></canvas></div>
   </section>
 
   <section>
     <h2>Weekly average wait time — past year</h2>
-    <p class="section-sub">Each capacity group defaults to the combined average. Use the switch on a chart to view northbound or southbound only.</p>
+    <p class="section-sub">Each vessel class defaults to the combined average. Use the switch on a chart to view northbound or southbound only.</p>
     <div id="weekly-charts"></div>
   </section>
 
   <section>
     <h2>5-year seasonal range vs. past year</h2>
-    <p class="section-sub">Each capacity group defaults to combined traffic. Switch direction without adding extra charts. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
+    <p class="section-sub">Each vessel class defaults to combined traffic. Switch direction without adding extra charts. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
     <div id="seasonal-charts"></div>
   </section>
 
   <section>
     <h2>Live vessel queue</h2>
-    <p class="section-sub">Vessels currently waiting to transit, within the tracked cubic-capacity bands.</p>
+    <p class="section-sub">Vessels currently waiting to transit within the selected market and classes.</p>
     <div id="queue-table"></div>
   </section>
 
 </div>
 
-<footer>Source: Vortexa Panama Canal Report · Braemar plc — LPG Desk</footer>
+<footer>Source: Vortexa Panama Canal Report · Braemar plc</footer>
 
 <script>
 // ---------------------------------------------------------------------
@@ -332,8 +343,8 @@ const SAMPLE_DATA = {
   data_source: "vortexa_panama_canal_report_email",
   current_window_days: 30,
   capacity_bands: {
-    "84k CBM LPG — Panamax": {
-      capacity_range_cbm: [82000, 86000],
+    "84k CBM — Panamax": {
+      range_label: "82,000–86,000 CBM",
       n_transits: 12,
       avg_wait_days: 1.8,
       by_direction: {
@@ -341,8 +352,8 @@ const SAMPLE_DATA = {
         Southbound: { n_transits: 6, avg_wait_days: 2.0 }
       }
     },
-    "88k CBM LPG — Super Panamax": {
-      capacity_range_cbm: [86001, 90000],
+    "88k CBM — Super Panamax": {
+      range_label: "86,001–90,000 CBM",
       n_transits: 14,
       avg_wait_days: 2.3,
       by_direction: {
@@ -350,8 +361,8 @@ const SAMPLE_DATA = {
         Southbound: { n_transits: 7, avg_wait_days: 2.7 }
       }
     },
-    "95k CBM LPG — Neo Panamax": {
-      capacity_range_cbm: [93000, 97000],
+    "95k CBM — Neo Panamax": {
+      range_label: "93,000–97,000 CBM",
       n_transits: 11,
       avg_wait_days: 3.1,
       by_direction: {
@@ -372,9 +383,9 @@ const SAMPLE_DATA = {
 // upward drift + noise, just to preview the chart shape.
 function buildSampleWeeklyHistory(){
   const bands = {
-    "84k CBM LPG — Panamax": 1.8,
-    "88k CBM LPG — Super Panamax": 2.2,
-    "95k CBM LPG — Neo Panamax": 2.9
+    "84k CBM — Panamax": 1.8,
+    "88k CBM — Super Panamax": 2.2,
+    "95k CBM — Neo Panamax": 2.9
   };
   const history = {};
   const today = new Date();
@@ -409,9 +420,20 @@ SAMPLE_DATA.weekly_history = buildSampleWeeklyHistory();
 // dashboard's existing empty-state message shows here too, matching
 // exactly what real data will show until this is built.
 SAMPLE_DATA.seasonal_range = {};
+SAMPLE_DATA.default_market = "LPG";
+SAMPLE_DATA.markets = {
+  LPG: {
+    classes: SAMPLE_DATA.capacity_bands,
+    weekly_history: SAMPLE_DATA.weekly_history,
+    seasonal_range: SAMPLE_DATA.seasonal_range,
+    current_queue: SAMPLE_DATA.current_queue,
+  }
+};
 
 let waitChart;
 let weeklyCharts = [];
+let appData;
+let currentMarket = "LPG";
 
 function exportStamp(){
   return new Date().toISOString().slice(0,10);
@@ -464,7 +486,7 @@ async function exportPDF(){
       offset += pageHeight;
       page += 1;
     }
-    pdf.save(`panama-lpg-dashboard-${exportStamp()}.pdf`);
+    pdf.save(`panama-${currentMarket.toLowerCase()}-dashboard-${exportStamp()}.pdf`);
   });
 }
 
@@ -474,10 +496,10 @@ async function exportPPTX(){
     if(typeof PptxGenJS === "undefined") throw new Error("PptxGenJS failed to load");
     const pptx = new PptxGenJS();
     pptx.layout = "LAYOUT_WIDE";
-    pptx.author = "Braemar LPG Desk";
+    pptx.author = "Braemar";
     pptx.company = "Braemar plc";
-    pptx.subject = "Panama Canal LPG transit wait times";
-    pptx.title = "Panama Canal — LPG Transit Wait Times";
+    pptx.subject = `Panama Canal ${currentMarket} transit wait times`;
+    pptx.title = `Panama Canal — ${currentMarket} Transit Wait Times`;
     pptx.lang = "en-GB";
 
     const addHeading = (slide, title, subtitle = "") => {
@@ -498,7 +520,7 @@ async function exportPPTX(){
     };
 
     let slide = pptx.addSlide();
-    addHeading(slide, "Panama Canal — LPG Transit Wait Times", document.getElementById("updated-line").textContent);
+    addHeading(slide, `Panama Canal — ${currentMarket} Transit Wait Times`, document.getElementById("updated-line").textContent);
     addCanvas(slide, await captureElement(document.getElementById("cards"), 2), 1.15);
 
     const addElementSlide = async (title, element) => {
@@ -508,7 +530,7 @@ async function exportPPTX(){
     };
 
     const waitSection = document.getElementById("waitChart").closest("section");
-    await addElementSlide("Average wait time by cubic-capacity band and direction", waitSection);
+    await addElementSlide("Average wait time by vessel class and direction", waitSection);
 
     const weeklyWidgets = document.querySelectorAll(".weekly-widget");
     for(const widget of weeklyWidgets){
@@ -525,7 +547,7 @@ async function exportPPTX(){
     const queueSection = document.getElementById("queue-table").closest("section");
     await addElementSlide("Live vessel queue", queueSection);
 
-    await pptx.writeFile({ fileName:`panama-lpg-dashboard-${exportStamp()}.pptx` });
+    await pptx.writeFile({ fileName:`panama-${currentMarket.toLowerCase()}-dashboard-${exportStamp()}.pptx` });
   });
 }
 
@@ -542,7 +564,6 @@ function renderCards(bands){
   const cardsEl = document.getElementById("cards");
   cardsEl.innerHTML = "";
   Object.entries(bands).forEach(([label, b]) => {
-    const [lo, hi] = b.capacity_range_cbm;
     const dirEntries = Object.entries(b.by_direction || {});
     const dirRows = dirEntries.map(([direction, d]) => `
       <div><span class="badge ${direction.toLowerCase()}">${direction}</span><b>${d.avg_wait_days}d</b></div>
@@ -551,7 +572,7 @@ function renderCards(bands){
     card.className = "card";
     card.innerHTML = `
       <h3>${label}</h3>
-      <div class="sub">${lo.toLocaleString()}–${hi.toLocaleString()} CBM · ${b.n_transits ?? 0} transits in window</div>
+      <div class="sub">${b.range_label} · ${b.n_transits ?? 0} transits in window</div>
       <div class="stat">${b.avg_wait_days ?? "–"}<span>days avg wait</span></div>
       <div class="dir-row">${dirRows || "<div>No breakdown available</div>"}</div>
     `;
@@ -806,14 +827,14 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
 function renderQueue(queue){
   const el = document.getElementById("queue-table");
   if(!queue || !queue.length){
-    el.innerHTML = `<div class="empty">No vessels currently in queue within the tracked cubic-capacity bands.</div>`;
+    el.innerHTML = `<div class="empty">No ${currentMarket} vessels currently waiting within the tracked classes.</div>`;
     return;
   }
   const rows = queue.map(v => `
     <tr>
       <td>${v.vessel_name ?? "–"}</td>
       <td>${v.vessel_imo ?? "–"}</td>
-      <td>${v.estimated_capacity_cbm ? v.estimated_capacity_cbm.toLocaleString() : "–"}</td>
+      <td>${currentMarket === "LPG" ? (v.estimated_capacity_cbm ? v.estimated_capacity_cbm.toLocaleString() : "–") : (v.vessel_dead_weight ? v.vessel_dead_weight.toLocaleString() : "–")}</td>
       <td>${v.direction ?? "–"}</td>
       <td>${v.lock ?? "–"}</td>
       <td>${v.hours_waiting_so_far ? (v.hours_waiting_so_far/24).toFixed(1) + "d" : "–"}</td>
@@ -822,21 +843,34 @@ function renderQueue(queue){
   el.innerHTML = `
     <table>
       <thead>
-        <tr><th>Vessel</th><th>IMO</th><th>Est. CBM</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
+        <tr><th>Vessel</th><th>IMO</th><th>${currentMarket === "LPG" ? "Est. CBM" : "DWT"}</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
       </thead>
       <tbody>${rows}</tbody>
     </table>
   `;
 }
 
+function renderMarket(market){
+  currentMarket = market;
+  const selected = appData.markets[market];
+  document.querySelector("header h1").textContent = `Panama Canal — ${market} Transit Wait Times`;
+  renderCards(selected.classes);
+  renderChart(selected.classes);
+  renderWeeklyCharts(selected.weekly_history);
+  renderSeasonalCharts(selected.seasonal_range, selected.weekly_history);
+  renderQueue(selected.current_queue);
+}
+
 function render(data, isSample){
+  appData = data;
   document.getElementById("updated-line").textContent = fmtUpdated(data.generated_at_utc, isSample);
   document.getElementById("sample-banner").style.display = isSample ? "block" : "none";
-  renderCards(data.capacity_bands);
-  renderChart(data.capacity_bands);
-  renderWeeklyCharts(data.weekly_history);
-  renderSeasonalCharts(data.seasonal_range, data.weekly_history);
-  renderQueue(data.current_queue);
+  const select = document.getElementById("market-select");
+  select.innerHTML = Object.keys(data.markets).map(market => `<option value="${market}">${market}</option>`).join("");
+  currentMarket = data.default_market && data.markets[data.default_market] ? data.default_market : Object.keys(data.markets)[0];
+  select.value = currentMarket;
+  select.onchange = () => renderMarket(select.value);
+  renderMarket(currentMarket);
 }
 
 async function loadData(){

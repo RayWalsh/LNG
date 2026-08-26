@@ -1,7 +1,14 @@
 # Panama Canal LPG Wait Times
 
-Tracks Panama Canal transit wait times for confirmed LPG carriers in three cubic-capacity bands
-(~84,000, ~88,000, and ~95,000 CBM), sourced from Vortexa's Panama Canal Report,
+Tracks Panama Canal transit wait times for LPG, LNG and oil tankers, sourced
+from Vortexa's Panama Canal Report. The dashboard provides a market selector
+and market-appropriate vessel classes:
+
+- LPG: ~84,000, ~88,000 and ~95,000 CBM groups
+- LNG: ~88,000 and ~95,000 DWT groups
+- Tankers: MR1, MR2, LR1, LR2/Aframax and Suezmax
+
+It publishes a dashboard showing:
 and publishes a dashboard showing:
 
 - current average wait time per band, by direction
