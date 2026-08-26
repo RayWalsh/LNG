@@ -215,6 +215,39 @@
   }
   .weekly-widget,
   .seasonal-widget{ min-width:0; }
+  .widget-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:10px;
+    flex-wrap:wrap;
+  }
+  .widget-head h3{ margin:0; }
+  .direction-toggle{
+    display:inline-flex;
+    gap:3px;
+    padding:3px;
+    border:1px solid var(--border);
+    border-radius:9px;
+    background:#f3f5f4;
+  }
+  .direction-toggle button{
+    border:0;
+    border-radius:6px;
+    padding:6px 10px;
+    background:transparent;
+    color:var(--muted);
+    font:inherit;
+    font-size:11px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .direction-toggle button.active{
+    background:#fff;
+    color:var(--navy);
+    box-shadow:0 1px 3px rgba(24,36,50,.14);
+  }
   .weekly-widget .chart-box,
   .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
@@ -268,13 +301,13 @@
 
   <section>
     <h2>Weekly average wait time — past year</h2>
-    <p class="section-sub">Northbound and southbound are shown separately for each vessel group. The dashed combined average is a secondary reference.</p>
+    <p class="section-sub">Each capacity group defaults to the combined average. Use the switch on a chart to view northbound or southbound only.</p>
     <div id="weekly-charts"></div>
   </section>
 
   <section>
     <h2>5-year seasonal range vs. past year</h2>
-    <p class="section-sub">Each capacity group has separate northbound, southbound and combined panels. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
+    <p class="section-sub">Each capacity group defaults to combined traffic. Switch direction without adding extra charts. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
     <div id="seasonal-charts"></div>
   </section>
 
@@ -569,6 +602,29 @@ function renderChart(bands){
 }
 
 const BAND_COLORS = ["#336e63", "#182432", "#2dd782", "#7a5cc0"];
+const DIRECTION_COLORS = { Combined:"#182432", Northbound:"#336e63", Southbound:"#3a4fa0" };
+
+function directionToggle(){
+  return `<div class="direction-toggle" role="group" aria-label="Transit direction">
+    ${["Combined","Northbound","Southbound"].map(direction =>
+      `<button type="button" data-direction="${direction}" class="${direction === "Combined" ? "active" : ""}" aria-pressed="${direction === "Combined"}">${direction}</button>`
+    ).join("")}
+  </div>`;
+}
+
+function bindDirectionToggle(wrap, onChange){
+  wrap.querySelectorAll(".direction-toggle button").forEach(button => {
+    button.addEventListener("click", () => {
+      wrap.querySelectorAll(".direction-toggle button").forEach(other => {
+        const active = other === button;
+        other.classList.toggle("active", active);
+        other.setAttribute("aria-pressed", String(active));
+      });
+      wrap.dataset.direction = button.dataset.direction;
+      onChange(button.dataset.direction);
+    });
+  });
+}
 
 function renderWeeklyCharts(weeklyHistory){
   const container = document.getElementById("weekly-charts");
@@ -583,19 +639,22 @@ function renderWeeklyCharts(weeklyHistory){
   Object.entries(weeklyHistory).forEach(([label, weeks]) => {
     const wrap = document.createElement("div");
     wrap.className = "weekly-widget";
-    wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>
+    wrap.dataset.direction = "Combined";
+    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>${directionToggle()}</div>
       <div class="chart-box"><canvas></canvas></div>`;
     container.appendChild(wrap);
     const canvas = wrap.querySelector("canvas");
     const labels = weeks.map(w => w.week_start);
-    const directionSeries = (direction) => weeks.map(w => w.by_direction?.[direction]?.avg_wait_days ?? null);
+    const seriesFor = (direction) => direction === "Combined"
+      ? weeks.map(w => w.avg_wait_days)
+      : weeks.map(w => w.by_direction?.[direction]?.avg_wait_days ?? null);
     const chart = new Chart(canvas, {
       type: "line",
-      data: { labels, datasets: [
-        { label:"Northbound", data:directionSeries("Northbound"), borderColor:"#336e63", backgroundColor:"#336e63", borderWidth:2.8, pointRadius:1.5, pointHoverRadius:5, spanGaps:true, tension:.35 },
-        { label:"Southbound", data:directionSeries("Southbound"), borderColor:"#3a4fa0", backgroundColor:"#3a4fa0", borderWidth:2.8, pointRadius:1.5, pointHoverRadius:5, spanGaps:true, tension:.35 },
-        { label:"Combined", data:weeks.map(w => w.avg_wait_days), borderColor:"#9aa7ab", backgroundColor:"#9aa7ab", borderDash:[5,4], borderWidth:1.4, pointRadius:0, spanGaps:true, tension:.35 }
-      ]},
+      data: { labels, datasets: [{
+        label:"Combined", data:seriesFor("Combined"), borderColor:DIRECTION_COLORS.Combined,
+        backgroundColor:DIRECTION_COLORS.Combined, borderWidth:2.8, pointRadius:1.5,
+        pointHoverRadius:5, spanGaps:true, tension:.35
+      }]},
       options: {
         responsive:true, maintainAspectRatio:false,
         interaction:{mode:"index",intersect:false},
@@ -605,6 +664,14 @@ function renderWeeklyCharts(weeklyHistory){
           y:{beginAtZero:true,title:{display:true,text:"Average wait (days)"}}
         }
       }
+    });
+    bindDirectionToggle(wrap, direction => {
+      const dataset = chart.data.datasets[0];
+      dataset.label = direction;
+      dataset.data = seriesFor(direction);
+      dataset.borderColor = DIRECTION_COLORS[direction];
+      dataset.backgroundColor = DIRECTION_COLORS[direction];
+      chart.update();
     });
     weeklyCharts.push(chart);
   });
@@ -624,39 +691,43 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
   }
 
   Object.entries(seasonalRange).forEach(([label, directions], i) => {
-    Object.entries(directions || {}).forEach(([direction, weeks]) => {
-      if(!weeks.length) return;
+    const initialWeeks = directions?.Combined || [];
+    if(!initialWeeks.length) return;
 
-      const wrap = document.createElement("div");
-      wrap.className = "seasonal-widget";
-      wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label} — ${direction}</h3>
-        <div class="chart-box"><canvas></canvas></div>`;
-      container.appendChild(wrap);
-      const canvas = wrap.querySelector("canvas");
-
-    const weekNums = weeks.map(w => w.week_of_year);
-    const minSeries = weeks.map(w => w.min_days);
-    const maxSeries = weeks.map(w => w.max_days);
-    const avgSeries = weeks.map(w => w.avg_days);
-
-    // Align past-year series onto the same week-of-year x-axis
+    const wrap = document.createElement("div");
+    wrap.className = "seasonal-widget";
+    wrap.dataset.direction = "Combined";
+    wrap.innerHTML = `<div class="widget-head"><h3 style="font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>${directionToggle()}</div>
+      <div class="chart-box"><canvas></canvas></div>`;
+    container.appendChild(wrap);
+    const canvas = wrap.querySelector("canvas");
     const pastYearWeeks = (weeklyHistory && weeklyHistory[label]) || [];
-    const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [
-      w.week_of_year,
-      direction === "Combined" ? w.avg_wait_days : w.by_direction?.[direction]?.avg_wait_days
-    ]));
-    const pastYearSeries = weekNums.map(wk => pastYearByWeek[wk] ?? null);
 
+    const chartData = (direction) => {
+      const weeks = directions?.[direction] || [];
+      const weekNums = weeks.map(w => w.week_of_year);
+      const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [
+        w.week_of_year,
+        direction === "Combined" ? w.avg_wait_days : w.by_direction?.[direction]?.avg_wait_days
+      ]));
+      return {
+        labels: weekNums.map(w => "Wk " + w),
+        min: weeks.map(w => w.min_days),
+        max: weeks.map(w => w.max_days),
+        avg: weeks.map(w => w.avg_days),
+        pastYear: weekNums.map(wk => pastYearByWeek[wk] ?? null),
+      };
+    };
+    const initial = chartData("Combined");
     const color = BAND_COLORS[i % BAND_COLORS.length];
-
     const chart = new Chart(canvas, {
       type: "line",
       data: {
-        labels: weekNums.map(w => "Wk " + w),
+        labels: initial.labels,
         datasets: [
           {
             label: "5-yr min",
-            data: minSeries,
+            data: initial.min,
             borderWidth: 0,
             pointRadius: 0,
             tension: 0.4,
@@ -666,7 +737,7 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
           },
           {
             label: "5-yr range (min–max)",
-            data: maxSeries,
+            data: initial.max,
             borderWidth: 0,
             pointRadius: 0,
             tension: 0.4,
@@ -677,7 +748,7 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
           },
           {
             label: "5-yr average",
-            data: avgSeries,
+            data: initial.avg,
             borderColor: "#9aa7ab",
             borderDash: [4, 3],
             borderWidth: 1.5,
@@ -689,7 +760,7 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
           },
           {
             label: "Past year",
-            data: pastYearSeries,
+            data: initial.pastYear,
             borderColor: color,
             backgroundColor: color,
             borderWidth: 2.5,
@@ -716,8 +787,19 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
         },
       },
     });
-      seasonalCharts.push(chart);
+    bindDirectionToggle(wrap, direction => {
+      const selected = chartData(direction);
+      chart.data.labels = selected.labels;
+      chart.data.datasets[0].data = selected.min;
+      chart.data.datasets[1].data = selected.max;
+      chart.data.datasets[2].data = selected.avg;
+      chart.data.datasets[3].data = selected.pastYear;
+      chart.data.datasets[3].label = `Past year — ${direction}`;
+      chart.data.datasets[3].borderColor = DIRECTION_COLORS[direction];
+      chart.data.datasets[3].backgroundColor = DIRECTION_COLORS[direction];
+      chart.update();
     });
+    seasonalCharts.push(chart);
   });
 }
 

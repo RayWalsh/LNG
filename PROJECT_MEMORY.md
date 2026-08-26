@@ -28,10 +28,9 @@ Compare like-for-like periods and directions. Always report sample sizes and,
 where possible, average, median, and the wait-time distribution. Pricing is a
 separate measure and must not be presented as evidence of a waiting-time difference.
 
-Weekly charts show northbound and southbound separately for each capacity group;
-the combined average is a visually secondary reference. Seasonal charts likewise
-provide separate northbound and southbound five-year ranges, with combined panels
-retained for context.
+Weekly and seasonal sections show one chart per capacity group. Each chart defaults
+to the combined result and provides a compact switch for Combined, Northbound, or
+Southbound, avoiding duplicate panels while retaining directional analysis.
 
 ## Current data constraint
 
