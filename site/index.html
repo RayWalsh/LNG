@@ -258,6 +258,19 @@
     color:var(--navy);
     box-shadow:0 1px 3px rgba(24,36,50,.14);
   }
+  .section-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+  .section-heading h2{margin:0;}
+  .period-toggle{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:9px;background:#f3f5f4;}
+  .period-toggle button{border:0;border-radius:6px;padding:7px 11px;background:transparent;color:var(--muted);font:600 11px/1 inherit;cursor:pointer;}
+  .period-toggle button.active{background:#fff;color:var(--ocean);box-shadow:0 1px 3px rgba(24,36,50,.14);}
+  .season-key{display:flex;gap:12px;align-items:center;margin:-8px 0 14px;font-size:11px;color:var(--muted);}
+  .season-swatch{width:13px;height:13px;border-radius:3px;display:inline-block;margin-right:5px;vertical-align:-2px;}
+  .table-scroll{overflow:auto;max-width:100%;}
+  .detail-controls{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin-bottom:14px;}
+  .detail-controls label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;display:grid;gap:5px;}
+  .detail-controls input,.detail-controls select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink);font:inherit;}
+  .action-btn{border:0;border-radius:8px;padding:9px 12px;background:var(--forest);color:#fff;font:600 12px/1 inherit;cursor:pointer;}
+  .result-count{font-size:12px;color:var(--muted);margin:0 0 10px;}
   .weekly-widget .chart-box,
   .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
@@ -306,7 +319,8 @@
   <div class="cards" id="cards"></div>
 
   <section>
-    <h2>Average wait time by vessel class and direction</h2>
+    <div class="section-heading"><h2>Average wait time by vessel class and direction</h2><div id="period-toggle" class="period-toggle" role="group" aria-label="Averaging period"></div></div>
+    <p class="section-sub" id="period-note"></p>
     <div class="chart-box"><canvas id="waitChart"></canvas></div>
   </section>
 
@@ -317,8 +331,9 @@
   </section>
 
   <section>
-    <h2>5-year seasonal range vs. past year</h2>
-    <p class="section-sub">Each vessel class defaults to combined traffic. Switch direction without adding extra charts. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
+    <h2>Current year vs. previous 5-year seasonal range</h2>
+    <p class="section-sub">Current calendar year runs only through the latest available week. Shaded band = prior five complete years' min–max; dotted line = their average.</p>
+    <div class="season-key"><span><i class="season-swatch" style="background:#dbeaf5"></i>Winter (weeks 1–9, 49–53)</span><span><i class="season-swatch" style="background:#fff0c7"></i>Summer (weeks 23–35)</span></div>
     <div id="seasonal-charts"></div>
   </section>
 
@@ -326,6 +341,20 @@
     <h2>Live vessel queue</h2>
     <p class="section-sub">Vessels currently waiting to transit within the selected market and classes.</p>
     <div id="queue-table"></div>
+  </section>
+
+  <section>
+    <h2>Vessel detail by period</h2>
+    <p class="section-sub">Waiting vessels use queue-arrival date; completed transits use canal-entry date. The source does not provide a dedicated loading date.</p>
+    <div class="detail-controls">
+      <label>From<input id="detail-from" type="date"></label>
+      <label>To<input id="detail-to" type="date"></label>
+      <label>Class<select id="detail-class"></select></label>
+      <button class="action-btn" id="detail-apply" type="button">Apply</button>
+      <button class="action-btn" id="detail-csv" type="button">Download CSV</button>
+    </div>
+    <p class="result-count" id="detail-count"></p>
+    <div id="vessel-detail"></div>
   </section>
 
 </div>
@@ -424,9 +453,12 @@ SAMPLE_DATA.default_market = "LPG";
 SAMPLE_DATA.markets = {
   LPG: {
     classes: SAMPLE_DATA.capacity_bands,
+    default_period: "3m",
+    period_summaries: {"3m":SAMPLE_DATA.capacity_bands,"6m":SAMPLE_DATA.capacity_bands,"1y":SAMPLE_DATA.capacity_bands,"5y":SAMPLE_DATA.capacity_bands},
     weekly_history: SAMPLE_DATA.weekly_history,
     seasonal_range: SAMPLE_DATA.seasonal_range,
     current_queue: SAMPLE_DATA.current_queue,
+    vessel_records: [],
   }
 };
 
@@ -434,6 +466,8 @@ let waitChart;
 let weeklyCharts = [];
 let appData;
 let currentMarket = "LPG";
+let currentPeriod = "3m";
+let filteredDetailRows = [];
 
 function exportStamp(){
   return new Date().toISOString().slice(0,10);
@@ -700,7 +734,24 @@ function renderWeeklyCharts(weeklyHistory){
 
 let seasonalCharts = [];
 
-function renderSeasonalCharts(seasonalRange, weeklyHistory){
+const seasonBandsPlugin = {
+  id:"seasonBands",
+  beforeDraw(chart){
+    const {ctx, chartArea, scales:{x}} = chart;
+    if(!chartArea || !x || !chart.data.labels.length) return;
+    const shade = (startWeek,endWeek,color) => {
+      const indices = chart.data.labels.map((label,i) => ({week:Number(String(label).replace(/\D/g,"")),i})).filter(v => v.week >= startWeek && v.week <= endWeek);
+      if(!indices.length) return;
+      const step = x.width / Math.max(chart.data.labels.length,1);
+      const left = Math.max(chartArea.left, x.getPixelForTick(indices[0].i) - step/2);
+      const right = Math.min(chartArea.right, x.getPixelForTick(indices[indices.length-1].i) + step/2);
+      ctx.save(); ctx.fillStyle=color; ctx.fillRect(left,chartArea.top,right-left,chartArea.bottom-chartArea.top); ctx.restore();
+    };
+    shade(1,9,"rgba(151,194,224,.18)"); shade(23,35,"rgba(244,197,84,.16)"); shade(49,53,"rgba(151,194,224,.18)");
+  }
+};
+
+function renderSeasonalCharts(seasonalRange){
   const container = document.getElementById("seasonal-charts");
   seasonalCharts.forEach(c => c.destroy());
   seasonalCharts = [];
@@ -712,7 +763,7 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
   }
 
   Object.entries(seasonalRange).forEach(([label, directions], i) => {
-    const initialWeeks = directions?.Combined || [];
+    const initialWeeks = directions?.Combined?.historical || [];
     if(!initialWeeks.length) return;
 
     const wrap = document.createElement("div");
@@ -722,21 +773,18 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
       <div class="chart-box"><canvas></canvas></div>`;
     container.appendChild(wrap);
     const canvas = wrap.querySelector("canvas");
-    const pastYearWeeks = (weeklyHistory && weeklyHistory[label]) || [];
-
     const chartData = (direction) => {
-      const weeks = directions?.[direction] || [];
-      const weekNums = weeks.map(w => w.week_of_year);
-      const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [
-        w.week_of_year,
-        direction === "Combined" ? w.avg_wait_days : w.by_direction?.[direction]?.avg_wait_days
-      ]));
+      const selected = directions?.[direction] || {historical:[],current_year:[]};
+      const weeks = selected.historical || [];
+      const currentByWeek = Object.fromEntries((selected.current_year || []).map(w => [w.week_of_year,w.avg_wait_days]));
+      const weekNums = Array.from({length:53},(_,index) => index + 1);
+      const historyByWeek = Object.fromEntries(weeks.map(w => [w.week_of_year,w]));
       return {
         labels: weekNums.map(w => "Wk " + w),
-        min: weeks.map(w => w.min_days),
-        max: weeks.map(w => w.max_days),
-        avg: weeks.map(w => w.avg_days),
-        pastYear: weekNums.map(wk => pastYearByWeek[wk] ?? null),
+        min: weekNums.map(w => historyByWeek[w]?.min_days ?? null),
+        max: weekNums.map(w => historyByWeek[w]?.max_days ?? null),
+        avg: weekNums.map(w => historyByWeek[w]?.avg_days ?? null),
+        current: weekNums.map(w => currentByWeek[w] ?? null),
       };
     };
     const initial = chartData("Combined");
@@ -780,8 +828,8 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
             order: 2,
           },
           {
-            label: "Past year",
-            data: initial.pastYear,
+            label: `Current year (${appData.current_year || new Date().getFullYear()})`,
+            data: initial.current,
             borderColor: color,
             backgroundColor: color,
             borderWidth: 2.5,
@@ -797,6 +845,7 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
           },
         ],
       },
+      plugins:[seasonBandsPlugin],
       options: {
         responsive: true,
         maintainAspectRatio: false,
@@ -814,8 +863,8 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
       chart.data.datasets[0].data = selected.min;
       chart.data.datasets[1].data = selected.max;
       chart.data.datasets[2].data = selected.avg;
-      chart.data.datasets[3].data = selected.pastYear;
-      chart.data.datasets[3].label = `Past year — ${direction}`;
+      chart.data.datasets[3].data = selected.current;
+      chart.data.datasets[3].label = `Current year — ${direction}`;
       chart.data.datasets[3].borderColor = DIRECTION_COLORS[direction];
       chart.data.datasets[3].backgroundColor = DIRECTION_COLORS[direction];
       chart.update();
@@ -832,33 +881,94 @@ function renderQueue(queue){
   }
   const rows = queue.map(v => `
     <tr>
-      <td>${v.vessel_name ?? "–"}</td>
+      <td>${escapeHtml(v.vessel_name)}</td>
       <td>${v.vessel_imo ?? "–"}</td>
       <td>${currentMarket === "LPG" ? (v.estimated_capacity_cbm ? v.estimated_capacity_cbm.toLocaleString() : "–") : (v.vessel_dead_weight ? v.vessel_dead_weight.toLocaleString() : "–")}</td>
-      <td>${v.direction ?? "–"}</td>
-      <td>${v.lock ?? "–"}</td>
+      <td>${escapeHtml(v.cargo_grade)}</td>
+      <td>${escapeHtml(v.origin)}</td>
+      <td>${escapeHtml(v.destination)}</td>
+      <td>${escapeHtml(v.direction)}</td>
+      <td>${escapeHtml(v.lock)}</td>
+      <td>${String(v.queue_arrival_time || "").slice(0,10) || "–"}</td>
       <td>${v.hours_waiting_so_far ? (v.hours_waiting_so_far/24).toFixed(1) + "d" : "–"}</td>
     </tr>
   `).join("");
   el.innerHTML = `
-    <table>
+    <div class="table-scroll"><table>
       <thead>
-        <tr><th>Vessel</th><th>IMO</th><th>${currentMarket === "LPG" ? "Est. CBM" : "DWT"}</th><th>Direction</th><th>Lock</th><th>Waiting so far</th></tr>
+        <tr><th>Vessel</th><th>IMO</th><th>${currentMarket === "LPG" ? "Est. CBM" : "DWT"}</th><th>Cargo grade</th><th>Origin</th><th>Destination</th><th>Direction</th><th>Lock</th><th>Queue arrival</th><th>Waiting so far</th></tr>
       </thead>
       <tbody>${rows}</tbody>
-    </table>
+    </table></div>
   `;
 }
+
+function escapeHtml(value){
+  if(value === null || value === undefined || value === "") return "–";
+  return String(value).replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[char]));
+}
+
+function renderPeriodControls(selected){
+  const labels = {"3m":"3 months","6m":"6 months","1y":"1 year","5y":"5 years"};
+  const toggle = document.getElementById("period-toggle");
+  toggle.innerHTML = Object.keys(selected.period_summaries || {"3m":selected.classes}).map(key => `<button type="button" data-period="${key}" class="${key===currentPeriod?'active':''}">${labels[key] || key}</button>`).join("");
+  toggle.querySelectorAll("button").forEach(button => button.onclick = () => {
+    currentPeriod = button.dataset.period;
+    renderPeriodControls(selected);
+    renderPeriodSummary(selected);
+  });
+}
+
+function renderPeriodSummary(selected){
+  const bands = selected.period_summaries?.[currentPeriod] || selected.classes;
+  const days = Object.values(bands)[0]?.window_days;
+  document.getElementById("period-note").textContent = `Completed transits during the latest ${days?.toLocaleString() || "selected"} days.`;
+  renderCards(bands); renderChart(bands);
+}
+
+function selectedDetailRows(){
+  const from = document.getElementById("detail-from").value;
+  const to = document.getElementById("detail-to").value;
+  const vesselClass = document.getElementById("detail-class").value;
+  return (appData.markets[currentMarket].vessel_records || []).filter(row => (!from || row.event_date >= from) && (!to || row.event_date <= to) && (!vesselClass || row.class_label === vesselClass)).sort((a,b) => b.event_date.localeCompare(a.event_date));
+}
+
+function renderVesselDetail(){
+  filteredDetailRows = selectedDetailRows();
+  const shown = filteredDetailRows.slice(0,500);
+  document.getElementById("detail-count").textContent = `Showing ${shown.length.toLocaleString()} of ${filteredDetailRows.length.toLocaleString()} matching vessels${filteredDetailRows.length > 500 ? "; download CSV for the full result" : ""}.`;
+  const rows = shown.map(v => `<tr><td>${v.event_date}</td><td>${escapeHtml(v.date_type)}</td><td>${escapeHtml(v.vessel_name)}</td><td>${escapeHtml(v.class_label)}</td><td>${escapeHtml(v.direction)}</td><td>${escapeHtml(v.cargo_grade)}</td><td>${escapeHtml(v.origin)}</td><td>${escapeHtml(v.destination)}</td><td>${escapeHtml(v.status)}</td><td>${v.wait_days ?? "–"}</td><td>${escapeHtml(v.booked)}</td></tr>`).join("");
+  document.getElementById("vessel-detail").innerHTML = rows ? `<div class="table-scroll"><table><thead><tr><th>Date</th><th>Date basis</th><th>Vessel</th><th>Class</th><th>Direction</th><th>Cargo grade</th><th>Origin</th><th>Destination</th><th>Status</th><th>Wait days</th><th>Booked</th></tr></thead><tbody>${rows}</tbody></table></div>` : `<div class="empty">No vessels match this period and class.</div>`;
+}
+
+function configureVesselDetail(selected){
+  const today = new Date(); const from = new Date(today); from.setDate(from.getDate()-90);
+  document.getElementById("detail-from").value = from.toISOString().slice(0,10);
+  document.getElementById("detail-to").value = today.toISOString().slice(0,10);
+  document.getElementById("detail-class").innerHTML = `<option value="">All classes</option>${Object.keys(selected.classes).map(label => `<option value="${escapeHtml(label)}">${escapeHtml(label)}</option>`).join("")}`;
+  document.getElementById("detail-apply").onclick = renderVesselDetail;
+  renderVesselDetail();
+}
+
+function downloadDetailCsv(){
+  const columns = ["event_date","date_type","vessel_name","vessel_imo","class_label","direction","cargo_grade","origin","destination","status","wait_days","booked"];
+  const quote = value => `"${String(value ?? "").replace(/"/g,'""')}"`;
+  const csv = [columns.join(","),...filteredDetailRows.map(row => columns.map(column => quote(row[column])).join(","))].join("\n");
+  const link = document.createElement("a"); link.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"})); link.download=`panama-${currentMarket.toLowerCase()}-vessels-${exportStamp()}.csv`; link.click(); URL.revokeObjectURL(link.href);
+}
+document.getElementById("detail-csv").addEventListener("click",downloadDetailCsv);
 
 function renderMarket(market){
   currentMarket = market;
   const selected = appData.markets[market];
+  currentPeriod = selected.default_period || "3m";
   document.querySelector("header h1").textContent = `Panama Canal — ${market} Transit Wait Times`;
-  renderCards(selected.classes);
-  renderChart(selected.classes);
+  renderPeriodControls(selected);
+  renderPeriodSummary(selected);
   renderWeeklyCharts(selected.weekly_history);
-  renderSeasonalCharts(selected.seasonal_range, selected.weekly_history);
+  renderSeasonalCharts(selected.seasonal_range);
   renderQueue(selected.current_queue);
+  configureVesselDetail(selected);
 }
 
 function render(data, isSample){

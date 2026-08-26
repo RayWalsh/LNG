@@ -17,6 +17,7 @@ properly computable, not approximated:
     the 'waiting' sheet, not an empty placeholder
 """
 
+import ast
 import os
 import json
 import re
@@ -46,7 +47,7 @@ MARKET_GROUPS = {
     ],
 }
 
-CURRENT_WINDOW_DAYS = 30
+PERIODS = {"3m": 90, "6m": 182, "1y": 365, "5y": 1826}
 PAST_YEAR_DAYS = 364
 
 
@@ -113,16 +114,16 @@ def completed_transits(df):
     return df[df["canal_entry_time"].notna() & df["wait_time"].notna()]
 
 
-def summarise_current(band, range_label):
+def summarise_current(band, range_label, window_days):
     now = pd.Timestamp.now('UTC').tz_localize(None)
-    window_start = now - timedelta(days=CURRENT_WINDOW_DAYS)
+    window_start = now - timedelta(days=window_days)
 
-    band = completed_transits(band)
+    band = completed_transits(band).copy()
     band = band[band["canal_entry_time"] >= window_start]
 
     result = {
         "range_label": range_label,
-        "window_days": CURRENT_WINDOW_DAYS,
+        "window_days": window_days,
         "n_transits": int(len(band)),
         "avg_wait_days": None,
         "by_direction": {},
@@ -168,29 +169,25 @@ def summarise_weekly(band):
 
 
 def summarise_seasonal_range(band):
-    """Five-year seasonal ranges for combined, northbound and southbound."""
+    """Current calendar year versus the previous five complete years."""
     now = pd.Timestamp.now('UTC').tz_localize(None)
-    cutoff = now - timedelta(days=PAST_YEAR_DAYS)
-
-    band = completed_transits(band)
-    band = band[band["canal_entry_time"] < cutoff].copy()  # everything OLDER than the past year
-
-    if not len(band):
-        return {}
-
+    band = completed_transits(band).copy()
     iso = band["canal_entry_time"].dt.isocalendar()
-    band["iso_year"] = iso.year.astype(int)
+    band["calendar_year"] = band["canal_entry_time"].dt.year.astype(int)
     band["week_of_year"] = iso.week.astype(int)
+    current_year = now.year
+    historical = band[band["calendar_year"].between(current_year - 5, current_year - 1)]
+    current = band[band["calendar_year"] == current_year]
 
     output = {}
     subsets = {
-        "Combined": band,
-        "Northbound": band[band["direction"].str.lower() == "northbound"],
-        "Southbound": band[band["direction"].str.lower() == "southbound"],
+        "Combined": (historical, current),
+        "Northbound": (historical[historical["direction"].str.lower() == "northbound"], current[current["direction"].str.lower() == "northbound"]),
+        "Southbound": (historical[historical["direction"].str.lower() == "southbound"], current[current["direction"].str.lower() == "southbound"]),
     }
-    for direction, subset in subsets.items():
+    for direction, (subset, current_subset) in subsets.items():
         per_year_week = (
-            subset.groupby(["iso_year", "week_of_year"])["wait_time"]
+            subset.groupby(["calendar_year", "week_of_year"])["wait_time"]
             .mean()
             .reset_index()
         )
@@ -198,14 +195,42 @@ def summarise_seasonal_range(band):
         for wk, wgroup in per_year_week.groupby("week_of_year"):
             weeks.append({
                 "week_of_year": int(wk),
-                "n_years": int(wgroup["iso_year"].nunique()),
+                "n_years": int(wgroup["calendar_year"].nunique()),
                 "min_days": round(float(wgroup["wait_time"].min()), 2),
                 "max_days": round(float(wgroup["wait_time"].max()), 2),
                 "avg_days": round(float(wgroup["wait_time"].mean()), 2),
             })
         weeks.sort(key=lambda w: w["week_of_year"])
-        output[direction] = weeks
+        current_weeks = []
+        for wk, wgroup in current_subset.groupby("week_of_year"):
+            current_weeks.append({
+                "week_of_year": int(wk),
+                "n_transits": int(len(wgroup)),
+                "avg_wait_days": round(float(wgroup["wait_time"].mean()), 2),
+            })
+        current_weeks.sort(key=lambda w: w["week_of_year"])
+        output[direction] = {"historical": weeks, "current_year": current_weeks}
     return output
+
+
+def product_label(value):
+    if pd.isna(value) or not str(value).strip():
+        return None
+    try:
+        parsed = ast.literal_eval(str(value))
+        values = parsed if isinstance(parsed, (list, tuple)) else [parsed]
+    except (ValueError, SyntaxError):
+        values = [str(value)]
+    clean = []
+    for item in values:
+        label = str(item).strip()
+        if label and label not in clean:
+            clean.append(label)
+    return " / ".join(clean) or None
+
+
+def safe_text(value):
+    return None if pd.isna(value) else str(value)
 
 
 def current_queue(band):
@@ -238,6 +263,42 @@ def current_queue(band):
             "lock": row["lock"],
             "queue_arrival_time": str(row["queue_arrival_time"]),
             "hours_waiting_so_far": round(float(row["hours_waiting_so_far"]), 1),
+            "cargo_grade": product_label(row.get("products")),
+            "origin": safe_text(row.get("origin_port")),
+            "destination": safe_text(row.get("destination_port")),
+        })
+    return records
+
+
+def vessel_records(band, class_label):
+    """Rows for the date-filterable audit table, limited to five years."""
+    now = pd.Timestamp.now('UTC').tz_localize(None)
+    cutoff = now - timedelta(days=PERIODS["5y"])
+    rows = band[
+        ((band["canal_entry_time"].notna()) & (band["canal_entry_time"] >= cutoff)) |
+        (band["source_sheet"] == "waiting")
+    ].copy()
+    records = []
+    for _, row in rows.iterrows():
+        waiting = row.get("source_sheet") == "waiting"
+        event = row.get("queue_arrival_time") if waiting else row.get("canal_entry_time")
+        if pd.isna(event):
+            continue
+        wait_days = ((now - event).total_seconds() / 86400) if waiting else row.get("wait_time")
+        records.append({
+            "id": safe_text(row.get("id")),
+            "event_date": event.date().isoformat(),
+            "date_type": "Queue arrival" if waiting else "Canal entry",
+            "status": "Waiting" if waiting else "Completed",
+            "vessel_name": safe_text(row.get("vessel_name")),
+            "vessel_imo": None if pd.isna(row.get("vessel_imo")) else int(row.get("vessel_imo")),
+            "class_label": class_label,
+            "direction": None if pd.isna(row.get("direction")) else str(row.get("direction")).capitalize(),
+            "cargo_grade": product_label(row.get("products")),
+            "origin": safe_text(row.get("origin_port")),
+            "destination": safe_text(row.get("destination_port")),
+            "wait_days": None if pd.isna(wait_days) else round(float(wait_days), 2),
+            "booked": safe_text(row.get("booked")),
         })
     return records
 
@@ -250,25 +311,30 @@ def main():
     for market, specs in MARKET_GROUPS.items():
         market_df = filter_market(all_transits, market)
         print(f"\n{market}: {len(market_df)} rows")
-        classes_out = {}
+        period_out = {key: {} for key in PERIODS}
         weekly_out = {}
         seasonal_out = {}
         queue_out = []
+        records_out = []
         for spec in specs:
             label = spec["label"]
             group = filter_group(market_df, spec)
-            current = summarise_current(group, spec["range_label"])
-            classes_out[label] = current
+            for period_key, days in PERIODS.items():
+                period_out[period_key][label] = summarise_current(group, spec["range_label"], days)
             weekly_out[label] = summarise_weekly(group)
             seasonal_out[label] = summarise_seasonal_range(group)
             queue_out.extend(current_queue(group))
-            print(f"  {label}: {len(group)} rows; {current['n_transits']} current transits")
+            records_out.extend(vessel_records(group, label))
+            print(f"  {label}: {len(group)} rows; {period_out['3m'][label]['n_transits']} 3-month transits")
         queue_out.sort(key=lambda v: v["hours_waiting_so_far"], reverse=True)
         markets_out[market] = {
-            "classes": classes_out,
+            "classes": period_out["3m"],
+            "default_period": "3m",
+            "period_summaries": period_out,
             "weekly_history": weekly_out,
             "seasonal_range": seasonal_out,
             "current_queue": queue_out,
+            "vessel_records": records_out,
         }
 
     output = {
@@ -281,7 +347,8 @@ def main():
             "data). Ingested and merged into a persistent master dataset "
             "on each new upload."
         ),
-        "current_window_days": CURRENT_WINDOW_DAYS,
+        "periods": PERIODS,
+        "current_year": datetime.now(timezone.utc).year,
         "default_market": "LPG",
         "markets": markets_out,
     }

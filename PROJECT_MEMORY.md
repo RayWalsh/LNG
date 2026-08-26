@@ -1,5 +1,14 @@
 # Panama Canal LPG Dashboard — Project Memory
 
+## Dashboard period and vessel-detail definitions
+
+- Headline averages offer trailing 3-month (90-day), 6-month (182-day), 1-year (365-day), and 5-year (1,826-day) windows; 3 months is the default.
+- Seasonal charts show the current calendar year-to-date against the previous five complete calendar years, with Combined/Northbound/Southbound switches.
+- Northern Hemisphere winter is marked at weeks 1–9 and 49–53; summer at weeks 23–35.
+- Cargo grade comes from Vortexa's `products` field.
+- The workbook has no dedicated loading date. Waiting vessels use `queue_arrival_time`; completed transits use `canal_entry_time`, and the UI must label this distinction.
+- Vessel detail supports date and class filters plus full-result CSV download, including waiting records, cargo grade, origin, destination, wait, booking status, and direction.
+
 ## Confirmed scope
 
 - This project tracks **LPG**, not LNG.

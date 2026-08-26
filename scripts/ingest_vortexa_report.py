@@ -46,7 +46,7 @@ KEEP_COLUMNS = [
     "vessel_type", "vessel_category", "vessel_deadweight", "cubic_metres",
     "queue_arrival_time", "canal_entry_time", "canal_exit_time",
     "wait_time", "booked", "booked_date", "direction", "lock",
-    "voyage_status", "origin_port", "destination_port",
+    "voyage_status", "origin_port", "destination_port", "products",
 ]
 
 

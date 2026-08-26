@@ -9,13 +9,15 @@ and market-appropriate vessel classes:
 - Tankers: MR1, MR2, LR1, LR2/Aframax and Suezmax
 
 It publishes a dashboard showing:
-and publishes a dashboard showing:
 
-- current average wait time per band, by direction
+- average wait time per band and direction, switchable across trailing 3-month, 6-month, 1-year and 5-year windows
 - a weekly trend over the past year
-- a 5-year seasonal range (min/max/avg by week-of-year) with the past year
-  overlaid, so you can see where "now" sits against history
-- a live snapshot of vessels currently in the queue
+- the current calendar year-to-date against the previous five complete years, with summer and winter shading
+- a live queue with cargo grade, origin and destination
+- date- and class-filterable vessel detail with full-result CSV download
+
+Waiting records are dated by queue arrival and completed records by canal entry.
+The source workbook does not contain a dedicated loading-date field.
 
 The working vessel groups are 84k CBM Panamax, 88k CBM Super Panamax,
 and 95k CBM Neo Panamax. The dashboard filters on Vortexa's `LPG Carriers`
