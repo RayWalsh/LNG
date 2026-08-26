@@ -28,6 +28,11 @@ Compare like-for-like periods and directions. Always report sample sizes and,
 where possible, average, median, and the wait-time distribution. Pricing is a
 separate measure and must not be presented as evidence of a waiting-time difference.
 
+Weekly charts show northbound and southbound separately for each capacity group;
+the combined average is a visually secondary reference. Seasonal charts likewise
+provide separate northbound and southbound five-year ranges, with combined panels
+retained for context.
+
 ## Current data constraint
 
 The Vortexa report contains historic LPG vessels under `vessel_type = LPG Carriers`

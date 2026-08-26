@@ -145,8 +145,7 @@ def summarise_weekly(df, capacity_min, capacity_max):
 
 
 def summarise_seasonal_range(df, capacity_min, capacity_max):
-    """Real 5-year seasonal range — finally genuinely computable, since
-    the master dataset's historic sheet goes back to 2020."""
+    """Five-year seasonal ranges for combined, northbound and southbound."""
     now = pd.Timestamp.now('UTC').tz_localize(None)
     cutoff = now - timedelta(days=PAST_YEAR_DAYS)
 
@@ -154,30 +153,36 @@ def summarise_seasonal_range(df, capacity_min, capacity_max):
     band = band[band["canal_entry_time"] < cutoff].copy()  # everything OLDER than the past year
 
     if not len(band):
-        return []
+        return {}
 
     iso = band["canal_entry_time"].dt.isocalendar()
     band["iso_year"] = iso.year.astype(int)
     band["week_of_year"] = iso.week.astype(int)
 
-    per_year_week = (
-        band.groupby(["iso_year", "week_of_year"])["wait_time"]
-        .mean()
-        .reset_index()
-    )
-
-    weeks = []
-    for wk, wgroup in per_year_week.groupby("week_of_year"):
-        weeks.append({
-            "week_of_year": int(wk),
-            "n_years": int(wgroup["iso_year"].nunique()),
-            "min_days": round(float(wgroup["wait_time"].min()), 2),
-            "max_days": round(float(wgroup["wait_time"].max()), 2),
-            "avg_days": round(float(wgroup["wait_time"].mean()), 2),
-        })
-
-    weeks.sort(key=lambda w: w["week_of_year"])
-    return weeks
+    output = {}
+    subsets = {
+        "Combined": band,
+        "Northbound": band[band["direction"].str.lower() == "northbound"],
+        "Southbound": band[band["direction"].str.lower() == "southbound"],
+    }
+    for direction, subset in subsets.items():
+        per_year_week = (
+            subset.groupby(["iso_year", "week_of_year"])["wait_time"]
+            .mean()
+            .reset_index()
+        )
+        weeks = []
+        for wk, wgroup in per_year_week.groupby("week_of_year"):
+            weeks.append({
+                "week_of_year": int(wk),
+                "n_years": int(wgroup["iso_year"].nunique()),
+                "min_days": round(float(wgroup["wait_time"].min()), 2),
+                "max_days": round(float(wgroup["wait_time"].max()), 2),
+                "avg_days": round(float(wgroup["wait_time"].mean()), 2),
+            })
+        weeks.sort(key=lambda w: w["week_of_year"])
+        output[direction] = weeks
+    return output
 
 
 def current_queue(df, capacity_min, capacity_max):
@@ -241,7 +246,8 @@ def main():
 
         seasonal = summarise_seasonal_range(df, capacity_min, capacity_max)
         seasonal_range_out[label] = seasonal
-        print(f"  Seasonal range: {len(seasonal)} week-of-year buckets")
+        seasonal_weeks = sum(len(weeks) for weeks in seasonal.values())
+        print(f"  Seasonal range: {seasonal_weeks} directional week-of-year buckets")
 
         queue = current_queue(df, capacity_min, capacity_max)
         current_queue_out.extend(queue)

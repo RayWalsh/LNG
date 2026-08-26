@@ -207,17 +207,20 @@
     height:440px;
   }
   .wrap > section{ grid-column:1 / -1; }
+  #weekly-charts,
   #seasonal-charts{
     display:grid;
     grid-template-columns:1fr;
     gap:16px;
   }
+  .weekly-widget,
   .seasonal-widget{ min-width:0; }
+  .weekly-widget .chart-box,
   .seasonal-widget .chart-box{ height:380px; }
   @media (max-width:900px){
     .wrap{ grid-template-columns:1fr; }
     .wrap > *{ grid-column:1 !important; }
-    #seasonal-charts{ grid-template-columns:1fr; }
+    #weekly-charts, #seasonal-charts{ grid-template-columns:1fr; }
   }
   @media (max-width:620px){
     header h1{ font-size:20px; }
@@ -265,13 +268,13 @@
 
   <section>
     <h2>Weekly average wait time — past year</h2>
-    <p class="section-sub">Each point is the average wait time for transits that entered the canal that week (Mon–Sun).</p>
-    <div class="chart-box"><canvas id="weeklyChart"></canvas></div>
+    <p class="section-sub">Northbound and southbound are shown separately for each vessel group. The dashed combined average is a secondary reference.</p>
+    <div id="weekly-charts"></div>
   </section>
 
   <section>
     <h2>5-year seasonal range vs. past year</h2>
-    <p class="section-sub">Shaded band = min–max average weekly wait across the prior 4 years, by week of year. Dotted line = 4-year average. Solid line = the past year, so you can see where it sits relative to history.</p>
+    <p class="section-sub">Each capacity group has separate northbound, southbound and combined panels. Shaded band = historical min–max; dotted line = historical average; solid line = past year.</p>
     <div id="seasonal-charts"></div>
   </section>
 
@@ -375,7 +378,7 @@ SAMPLE_DATA.weekly_history = buildSampleWeeklyHistory();
 SAMPLE_DATA.seasonal_range = {};
 
 let waitChart;
-let weeklyChart;
+let weeklyCharts = [];
 
 function exportStamp(){
   return new Date().toISOString().slice(0,10);
@@ -472,9 +475,13 @@ async function exportPPTX(){
     };
 
     const waitSection = document.getElementById("waitChart").closest("section");
-    const weeklySection = document.getElementById("weeklyChart").closest("section");
     await addElementSlide("Average wait time by cubic-capacity band and direction", waitSection);
-    await addElementSlide("Weekly average wait time — past year", weeklySection);
+
+    const weeklyWidgets = document.querySelectorAll(".weekly-widget");
+    for(const widget of weeklyWidgets){
+      const label = widget.querySelector("h3")?.textContent || "Capacity band";
+      await addElementSlide(`Weekly average wait — ${label}`, widget);
+    }
 
     const seasonalWidgets = document.querySelectorAll(".seasonal-widget");
     for(const widget of seasonalWidgets){
@@ -563,56 +570,43 @@ function renderChart(bands){
 
 const BAND_COLORS = ["#336e63", "#182432", "#2dd782", "#7a5cc0"];
 
-function renderWeeklyChart(weeklyHistory){
-  const canvas = document.getElementById("weeklyChart");
+function renderWeeklyCharts(weeklyHistory){
+  const container = document.getElementById("weekly-charts");
+  weeklyCharts.forEach(c => c.destroy());
+  weeklyCharts = [];
+  container.innerHTML = "";
   if(!weeklyHistory || !Object.keys(weeklyHistory).length){
-    canvas.parentElement.innerHTML = `<div class="empty">No weekly history available yet.</div>`;
+    container.innerHTML = `<div class="empty">No weekly history available yet.</div>`;
     return;
   }
 
-  // Union of all week_start labels across bands, sorted chronologically
-  const allWeeks = new Set();
-  Object.values(weeklyHistory).forEach(weeks => weeks.forEach(w => allWeeks.add(w.week_start)));
-  const labels = Array.from(allWeeks).sort();
-
-  const datasets = Object.entries(weeklyHistory).map(([label, weeks], i) => {
-    const byWeek = Object.fromEntries(weeks.map(w => [w.week_start, w.avg_wait_days]));
-    return {
-      label,
-      data: labels.map(wk => byWeek[wk] ?? null),
-      spanGaps: true,
-      borderColor: BAND_COLORS[i % BAND_COLORS.length],
-      backgroundColor: BAND_COLORS[i % BAND_COLORS.length],
-      tension: 0.4,
-      cubicInterpolationMode: "monotone",
-      borderJoinStyle: "round",
-      borderCapStyle: "round",
-      pointRadius: 2,
-      pointHoverRadius: 5,
-      borderWidth: 2.5,
-    };
-  });
-
-  if(weeklyChart) weeklyChart.destroy();
-  weeklyChart = new Chart(canvas, {
-    type: "line",
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: { legend: { position: "bottom" } },
-      scales: {
-        x: {
-          ticks: {
-            maxRotation: 0,
-            autoSkip: true,
-            maxTicksLimit: 12,
-          }
-        },
-        y: { beginAtZero: true, title: { display: true, text: "Average wait (days)" } }
+  Object.entries(weeklyHistory).forEach(([label, weeks]) => {
+    const wrap = document.createElement("div");
+    wrap.className = "weekly-widget";
+    wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>
+      <div class="chart-box"><canvas></canvas></div>`;
+    container.appendChild(wrap);
+    const canvas = wrap.querySelector("canvas");
+    const labels = weeks.map(w => w.week_start);
+    const directionSeries = (direction) => weeks.map(w => w.by_direction?.[direction]?.avg_wait_days ?? null);
+    const chart = new Chart(canvas, {
+      type: "line",
+      data: { labels, datasets: [
+        { label:"Northbound", data:directionSeries("Northbound"), borderColor:"#336e63", backgroundColor:"#336e63", borderWidth:2.8, pointRadius:1.5, pointHoverRadius:5, spanGaps:true, tension:.35 },
+        { label:"Southbound", data:directionSeries("Southbound"), borderColor:"#3a4fa0", backgroundColor:"#3a4fa0", borderWidth:2.8, pointRadius:1.5, pointHoverRadius:5, spanGaps:true, tension:.35 },
+        { label:"Combined", data:weeks.map(w => w.avg_wait_days), borderColor:"#9aa7ab", backgroundColor:"#9aa7ab", borderDash:[5,4], borderWidth:1.4, pointRadius:0, spanGaps:true, tension:.35 }
+      ]},
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:"index",intersect:false},
+        plugins:{legend:{position:"bottom"}},
+        scales:{
+          x:{ticks:{maxRotation:0,autoSkip:true,maxTicksLimit:12}},
+          y:{beginAtZero:true,title:{display:true,text:"Average wait (days)"}}
+        }
       }
-    }
+    });
+    weeklyCharts.push(chart);
   });
 }
 
@@ -629,15 +623,16 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
     return;
   }
 
-  Object.entries(seasonalRange).forEach(([label, weeks], i) => {
-    if(!weeks.length) return;
+  Object.entries(seasonalRange).forEach(([label, directions], i) => {
+    Object.entries(directions || {}).forEach(([direction, weeks]) => {
+      if(!weeks.length) return;
 
-    const wrap = document.createElement("div");
-    wrap.className = "seasonal-widget";
-    wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label}</h3>
-      <div class="chart-box"><canvas></canvas></div>`;
-    container.appendChild(wrap);
-    const canvas = wrap.querySelector("canvas");
+      const wrap = document.createElement("div");
+      wrap.className = "seasonal-widget";
+      wrap.innerHTML = `<h3 style="margin:0 0 10px 0;font-size:13px;color:var(--navy);text-transform:uppercase;letter-spacing:.4px;">${label} — ${direction}</h3>
+        <div class="chart-box"><canvas></canvas></div>`;
+      container.appendChild(wrap);
+      const canvas = wrap.querySelector("canvas");
 
     const weekNums = weeks.map(w => w.week_of_year);
     const minSeries = weeks.map(w => w.min_days);
@@ -646,7 +641,10 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
 
     // Align past-year series onto the same week-of-year x-axis
     const pastYearWeeks = (weeklyHistory && weeklyHistory[label]) || [];
-    const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [w.week_of_year, w.avg_wait_days]));
+    const pastYearByWeek = Object.fromEntries(pastYearWeeks.map(w => [
+      w.week_of_year,
+      direction === "Combined" ? w.avg_wait_days : w.by_direction?.[direction]?.avg_wait_days
+    ]));
     const pastYearSeries = weekNums.map(wk => pastYearByWeek[wk] ?? null);
 
     const color = BAND_COLORS[i % BAND_COLORS.length];
@@ -718,7 +716,8 @@ function renderSeasonalCharts(seasonalRange, weeklyHistory){
         },
       },
     });
-    seasonalCharts.push(chart);
+      seasonalCharts.push(chart);
+    });
   });
 }
 
@@ -753,7 +752,7 @@ function render(data, isSample){
   document.getElementById("sample-banner").style.display = isSample ? "block" : "none";
   renderCards(data.capacity_bands);
   renderChart(data.capacity_bands);
-  renderWeeklyChart(data.weekly_history);
+  renderWeeklyCharts(data.weekly_history);
   renderSeasonalCharts(data.seasonal_range, data.weekly_history);
   renderQueue(data.current_queue);
 }
