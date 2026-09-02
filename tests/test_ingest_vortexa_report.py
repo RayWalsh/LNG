@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.ingest_vortexa_report import KEEP_COLUMNS, merge, read_workbook
+from scripts.ingest_vortexa_report import KEEP_COLUMNS, merge, read_workbook, reject_stale_report
 
 
 def row(identifier, sheet, vessel="VESSEL"):
@@ -33,11 +33,25 @@ class MergeTests(unittest.TestCase):
 
 
 class WorkbookSafetyTests(unittest.TestCase):
+    def test_older_report_is_rejected(self):
+        master = pd.DataFrame([row("current", "waiting")])
+        master["report_timestamp"] = "2026-08-31T00:00:00+00:00"
+        with self.assertRaisesRegex(ValueError, "older than the latest accepted"):
+            reject_stale_report(master, pd.Timestamp("2026-08-30T00:00:00+00:00"))
+
+    def test_same_day_correction_is_allowed(self):
+        master = pd.DataFrame([row("current", "waiting")])
+        master["report_timestamp"] = "2026-08-31T00:00:00+00:00"
+        reject_stale_report(master, pd.Timestamp("2026-08-31T00:00:00+00:00"))
+
     def test_empty_historic_sheet_is_rejected(self):
         columns = [column for column in KEEP_COLUMNS if column not in {"source_sheet", "ingested_at"}]
         with tempfile.TemporaryDirectory() as directory:
             workbook = Path(directory) / "empty.xlsx"
             with pd.ExcelWriter(workbook) as writer:
+                welcome = pd.DataFrame([[pd.NA] * 2 for _ in range(6)])
+                welcome.iloc[5, 1] = pd.Timestamp("2026-08-31")
+                welcome.to_excel(writer, sheet_name="Welcome!", index=False, header=False)
                 for sheet in ("historic", "waiting", "future"):
                     pd.DataFrame(columns=columns).to_excel(writer, sheet_name=sheet, index=False)
             with self.assertRaisesRegex(ValueError, "no valid records"):
