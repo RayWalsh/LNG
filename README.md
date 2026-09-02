@@ -1,107 +1,46 @@
-# Panama Canal LPG Wait Times
+# Panama Canal Intelligence
 
-Tracks Panama Canal transit wait times for LPG, LNG and oil tankers, sourced
-from Vortexa's Panama Canal Report. The dashboard provides a market selector
-and market-appropriate vessel classes:
+GitHub-hosted dashboard for LPG, LNG, and tanker Panama Canal wait times from
+Vortexa's periodic Panama Canal Excel report.
 
-- LPG: ~84,000, ~88,000 and ~95,000 CBM groups
-- LNG: ~88,000 and ~95,000 DWT groups
-- Tankers: MR1, MR2, LR1, LR2/Aframax and Suezmax
+## Upload fresh data
 
-It publishes a dashboard showing:
+Upload a new `.xlsx` report to `uploads/incoming/` on GitHub. The workflow
+validates and merges it into the persistent dataset, rebuilds the dashboard,
+and deploys GitHub Pages. See **[UPLOAD_DATA.md](UPLOAD_DATA.md)** for exact
+click-by-click instructions.
 
-- average wait time per band and direction, switchable across trailing 3-month, 6-month, 1-year and 5-year windows
-- a weekly trend over the past year
-- the current calendar year-to-date against the previous five complete years, with summer and winter shading
-- a live queue with cargo grade, origin and destination
-- date- and class-filterable vessel detail with full-result CSV download
+The workbook is not the source of truth:
 
-Waiting records are dated by queue arrival and completed records by canal entry.
-The source workbook does not contain a dedicated loading-date field.
+- `historic` is cumulatively upserted by Vortexa's stable transit `id`.
+- `waiting` replaces the previous live-waiting snapshot.
+- `future` replaces the previous future-transits snapshot.
+- `data/master_transits.csv` is the consolidated source of truth.
+- `reports/latest-import.json` records the latest successful import.
 
-The working vessel groups are 84k CBM Panamax, 88k CBM Super Panamax,
-and 95k CBM Neo Panamax. The dashboard filters on Vortexa's `LPG Carriers`
-vessel type before applying these capacity bands. Because the report does not
-include nameplate capacity, the maximum observed cargo cubic volume for each
-vessel is used as a documented working proxy.
+Structural validation happens before persistent data is changed.
 
-Everything runs in GitHub — no local machine required, so it works the
-same from any computer.
+## Project structure
 
-## How it works
-
-```
-scripts/fetch_panama_wait_times.py   -> pulls data from Vortexa, writes site/panama_wait_times.json
-site/index.html                      -> static dashboard that reads that JSON
-.github/workflows/update-and-deploy.yml
-                                      -> runs the script on a schedule (every 6h)
-                                         and publishes site/ via GitHub Pages
+```text
+uploads/incoming/                 Fresh .xlsx upload location
+scripts/ingest_vortexa_report.py  Validation, snapshot replacement, and upsert
+scripts/build_dashboard_data.py   Dashboard aggregation
+data/master_transits.csv          Persistent consolidated dataset
+reports/latest-import.json        Latest successful import report
+site/index.html                   Static dashboard
+.github/workflows/ingest-and-deploy.yml
+                                  Test, import, commit, and Pages deployment
 ```
 
-Nothing is committed back to the repo by the workflow — each run rebuilds
-the JSON fresh and deploys it straight to Pages. If a run fails (e.g. a
-Vortexa API hiccup), the previous successful deployment just stays live
-until the next run succeeds.
+## Local verification
 
-## One-time setup (does this once, in the GitHub web UI — nothing local)
+```bash
+pip install -r requirements.txt
+python -m unittest discover -s tests -v
+python scripts/ingest_vortexa_report.py path/to/report.xlsx
+python scripts/build_dashboard_data.py
+```
 
-1. **Add the Vortexa API key as a repository secret.**
-   Repo → **Settings** → **Secrets and variables** → **Actions** →
-   **New repository secret** → name it `VORTEXA_API_KEY`, paste your key,
-   save.
-   Do **not** put the real key in `.env`, in a commit, or in a Claude Code
-   chat message — this is the only place it should ever live. Claude
-   Code's cloud sessions have no secrets store of their own, so this
-   repository secret is what the workflow uses to authenticate.
-
-2. **Enable GitHub Pages, source = GitHub Actions.**
-   Repo → **Settings** → **Pages** → under "Build and deployment", set
-   **Source** to **GitHub Actions**. (Not "Deploy from a branch" — we
-   want the workflow-driven deployment above.)
-
-3. **Run the workflow once manually** to confirm it works end to end.
-   Repo → **Actions** tab → **Update Panama Canal data and deploy
-   dashboard** → **Run workflow**. Watch the logs — this is where you'll
-   see whether `vortexasdk`'s `CanalTransit` class/filters match what the
-   script assumes (see the note at the top of the script — this was
-   built from public docs and not yet verified against a live account).
-
-4. **Find your live URL.**
-   Repo → **Settings** → **Pages** will show something like
-   `https://<your-username>.github.io/<repo-name>/` once the first
-   deployment succeeds.
-
-After that, it just runs itself every 6 hours. Adjust the schedule in
-`.github/workflows/update-and-deploy.yml` (the `cron` line) if you want
-it more or less frequent.
-
-## If the first run fails
-
-Almost certainly it will, on the very first try — that's expected. The
-script's data-fetching logic was written from Vortexa's *public* SDK
-documentation, not tested against a real account. Common first-run fixes:
-
-- **`ImportError: cannot import name 'CanalTransit'`** — the class name
-  might differ in your installed SDK version. Check the Actions log, or
-  ask Claude Code to run `python3 -c "from vortexasdk import *; print([x for x in dir() if 'anal' in x.lower()])"` inside a throwaway debug workflow step to find the real name.
-- **A `search()` TypeError about unexpected keyword arguments** — the
-  filter names on `CanalTransit().search()` weren't confirmed from public
-  docs (see the note in `fetch_panama_wait_times.py`). Ask Claude Code to
-  add a temporary debug step that runs
-  `python3 -c "from vortexasdk import CanalTransit; help(CanalTransit().search)"`
-  as a workflow step, read the real signature from the log, and fix the
-  script.
-- **Empty results / permissions error** — your Vortexa plan may not
-  include canal-level transit data (some plans are cargo/flows only).
-  Worth confirming with your Vortexa account contact.
-
-See `CLAUDE.md` for how to hand this whole debugging loop to Claude Code.
-
-## Local structure reference
-
-- `scripts/fetch_panama_wait_times.py` — the data pull + aggregation logic
-- `site/index.html` — the dashboard (falls back to clearly-labeled sample
-  data if `panama_wait_times.json` isn't found, so it's never blank)
-- `.github/workflows/update-and-deploy.yml` — the scheduler + deployer
-- `requirements.txt` — Python dependencies
-- `.env.example` — reference only, for optional local debugging
+The older Vortexa API probes are diagnostic only. Normal uploads do not use
+`VORTEXA_API_KEY`.
