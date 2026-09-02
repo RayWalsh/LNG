@@ -1,24 +1,16 @@
-name: Ingest Vortexa report and deploy dashboard
-
-# Triggers when a new/updated Vortexa Panama Canal Report is uploaded to
-# data/latest_vortexa_report.xlsx (just overwrite that same file each
-# time you get a new report from Vortexa — no need to rename it).
-#
-# Unlike the earlier API-based pipeline, this data is CUMULATIVE and
-# manually supplied, so data/master_transits.csv is committed back to
-# the repo on every run (not regenerated from scratch) — see
-# scripts/ingest_vortexa_report.py for the upsert logic.
+name: Import uploaded report and deploy dashboard
 
 on:
   push:
     branches: [main]
     paths:
-      - "data/latest_vortexa_report.xlsx"
+      - "uploads/incoming/*.xlsx"
       - "site/**"
       - "scripts/**"
+      - "tests/**"
       - "requirements.txt"
       - ".github/workflows/ingest-and-deploy.yml"
-  workflow_dispatch: {}   # lets you re-run manually without a new upload
+  workflow_dispatch: {}
 
 permissions:
   contents: write
@@ -26,43 +18,69 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: panama-data-and-pages
   cancel-in-progress: false
 
 jobs:
-  ingest-and-build:
+  validate-import-build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
+      - name: Check out repository
+        uses: actions/checkout@v5
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
+          cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      - name: Ingest the uploaded Vortexa report
-        run: python3 scripts/ingest_vortexa_report.py data/latest_vortexa_report.xlsx
-
-      - name: Build dashboard JSON from master dataset
-        run: python3 scripts/build_dashboard_data.py
-
-      - name: Commit updated master dataset back to the repo
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Update master transits dataset from latest Vortexa report"
-          file_pattern: "data/master_transits.csv"
-
-      - name: Upload site as Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Run importer tests
+        run: python -m unittest discover -s tests -v
+      - name: Find uploaded workbooks
+        id: uploads
+        shell: bash
+        run: |
+          mapfile -t files < <(find uploads/incoming -maxdepth 1 -type f -iname '*.xlsx' -print | sort)
+          if (( ${#files[@]} == 0 )); then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            printf '%s\n' "${files[@]}" > /tmp/vortexa-workbooks.txt
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Validate and merge uploaded workbooks
+        if: steps.uploads.outputs.found == 'true'
+        shell: bash
+        run: |
+          while IFS= read -r workbook; do
+            python scripts/ingest_vortexa_report.py "$workbook"
+          done < /tmp/vortexa-workbooks.txt
+          {
+            echo "## Vortexa workbook import"
+            echo '```json'
+            cat reports/latest-import.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Require an existing master dataset
+        run: test -s data/master_transits.csv
+      - name: Build dashboard data
+        run: python scripts/build_dashboard_data.py
+      - name: Commit consolidated data and consume uploads
+        if: steps.uploads.outputs.found == 'true'
+        shell: bash
+        run: |
+          while IFS= read -r workbook; do rm "$workbook"; done < /tmp/vortexa-workbooks.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/master_transits.csv reports/latest-import.json uploads/incoming
+          git commit -m "Import fresh Vortexa Panama Canal report"
+          git push
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
         with:
           path: site
 
   deploy:
-    needs: ingest-and-build
+    needs: validate-import-build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
