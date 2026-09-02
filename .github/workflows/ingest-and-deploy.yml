@@ -1,6 +1,13 @@
 name: Import uploaded report and deploy dashboard
 
 on:
+  pull_request:
+    paths:
+      - "site/**"
+      - "scripts/**"
+      - "tests/**"
+      - "requirements.txt"
+      - ".github/workflows/ingest-and-deploy.yml"
   push:
     branches: [main]
     paths:
@@ -80,6 +87,7 @@ jobs:
           path: site
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: validate-import-build
     runs-on: ubuntu-latest
     environment:
