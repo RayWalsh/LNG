@@ -50,6 +50,10 @@ jobs:
           mapfile -t files < <(find uploads/incoming -maxdepth 1 -type f -iname '*.xlsx' -print | sort)
           if (( ${#files[@]} == 0 )); then
             echo "found=false" >> "$GITHUB_OUTPUT"
+          elif (( ${#files[@]} > 1 )); then
+            echo "::error::More than one workbook is waiting in uploads/incoming. Upload and process one report at a time."
+            printf 'Found: %s\n' "${files[@]}"
+            exit 1
           else
             printf '%s\n' "${files[@]}" > /tmp/vortexa-workbooks.txt
             echo "found=true" >> "$GITHUB_OUTPUT"
