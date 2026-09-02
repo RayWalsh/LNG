@@ -1,10 +1,11 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.ingest_vortexa_report import KEEP_COLUMNS, merge
+from scripts.ingest_vortexa_report import KEEP_COLUMNS, merge, read_workbook
 
 
 def row(identifier, sheet, vessel="VESSEL"):
@@ -29,6 +30,18 @@ class MergeTests(unittest.TestCase):
         incoming = pd.DataFrame([row("same", "future", "PLANNED")])
         merged, _ = merge(master, incoming, "2026-09-01T00:00:00+00:00")
         self.assertEqual(merged.iloc[0].vessel_name, "COMPLETED")
+
+
+class WorkbookSafetyTests(unittest.TestCase):
+    def test_empty_historic_sheet_is_rejected(self):
+        columns = [column for column in KEEP_COLUMNS if column not in {"source_sheet", "ingested_at"}]
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = Path(directory) / "empty.xlsx"
+            with pd.ExcelWriter(workbook) as writer:
+                for sheet in ("historic", "waiting", "future"):
+                    pd.DataFrame(columns=columns).to_excel(writer, sheet_name=sheet, index=False)
+            with self.assertRaisesRegex(ValueError, "no valid records"):
+                read_workbook(workbook)
 
 
 if __name__ == "__main__": unittest.main()
