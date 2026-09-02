@@ -107,6 +107,10 @@ def read_workbook(path: Path) -> WorkbookRead:
         counts[sheet] = len(frame) + len(sheet_rejected)
         frames.append(frame)
         rejected.extend(sheet_rejected)
+    if frames[0].empty:
+        raise ImportValidationError(
+            "Sheet 'historic' contains no valid records; snapshots were not replaced"
+        )
     combined = pd.concat(frames, ignore_index=True)
     before = len(combined)
     combined["_priority"] = combined["source_sheet"].map(SHEET_PRIORITY)
