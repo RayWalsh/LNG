@@ -20,7 +20,7 @@ MASTER_PATH = Path(os.environ.get("MASTER_TRANSITS_PATH", "data/master_transits.
 REPORT_PATH = Path(os.environ.get("IMPORT_REPORT_PATH", "reports/latest-import.json"))
 SOURCE_SHEETS = ("historic", "waiting", "future")
 SNAPSHOT_SHEETS = ("waiting", "future")
-DATE_COLUMNS = ("queue_arrival_time", "canal_entry_time", "canal_exit_time", "booked_date")
+DATE_COLUMNS = ("queue_arrival_time", "canal_entry_time", "canal_exit_time", "booked_date", "report_timestamp")
 REQUIRED_COLUMNS = {"id", "vessel_name", "queue_arrival_time", "direction", "lock"}
 KEEP_COLUMNS = [
     "id", "vessel_name", "vessel_imo", "vessel_class", "vessel_family",
@@ -28,6 +28,7 @@ KEEP_COLUMNS = [
     "queue_arrival_time", "canal_entry_time", "canal_exit_time", "wait_time",
     "booked", "booked_date", "direction", "lock", "voyage_status",
     "origin_port", "destination_port", "products", "source_sheet", "ingested_at",
+    "report_timestamp",
 ]
 SHEET_PRIORITY = {"future": 1, "waiting": 2, "historic": 3}
 
@@ -42,6 +43,7 @@ class WorkbookRead:
     sheet_counts: dict[str, int]
     rejected_rows: list[dict[str, object]]
     duplicates_within_upload: int
+    report_timestamp: pd.Timestamp
 
 
 def blank_frame() -> pd.DataFrame:
@@ -98,9 +100,21 @@ def read_workbook(path: Path) -> WorkbookRead:
         available = set(pd.ExcelFile(path).sheet_names)
     except Exception as exc:
         raise ImportValidationError(f"Cannot open workbook: {exc}") from exc
-    missing = sorted(set(SOURCE_SHEETS) - available)
+    missing = sorted((set(SOURCE_SHEETS) | {"Welcome!"}) - available)
     if missing:
         raise ImportValidationError(f"Workbook is missing required sheets: {', '.join(missing)}")
+    welcome = pd.read_excel(path, sheet_name="Welcome!", header=None, nrows=12)
+    try:
+        report_timestamp = pd.Timestamp(welcome.iloc[5, 1])
+    except (IndexError, TypeError, ValueError) as exc:
+        raise ImportValidationError("Cannot read the report date from Welcome! cell B6") from exc
+    if pd.isna(report_timestamp):
+        raise ImportValidationError("Cannot read the report date from Welcome! cell B6")
+    if report_timestamp.tzinfo is None:
+        report_timestamp = report_timestamp.tz_localize("UTC")
+    else:
+        report_timestamp = report_timestamp.tz_convert("UTC")
+
     frames, rejected, counts = [], [], {}
     for sheet in SOURCE_SHEETS:
         frame, sheet_rejected = read_sheet(path, sheet)
@@ -115,12 +129,26 @@ def read_workbook(path: Path) -> WorkbookRead:
     before = len(combined)
     combined["_priority"] = combined["source_sheet"].map(SHEET_PRIORITY)
     combined = combined.sort_values("_priority").drop_duplicates("id", keep="last")
-    return WorkbookRead(combined.drop(columns="_priority"), counts, rejected, before - len(combined))
+    return WorkbookRead(
+        combined.drop(columns="_priority"), counts, rejected,
+        before - len(combined), report_timestamp,
+    )
 
 
-def merge(master: pd.DataFrame, incoming: pd.DataFrame, ingested_at: str):
+def reject_stale_report(master: pd.DataFrame, report_timestamp: pd.Timestamp):
+    previous = pd.to_datetime(master.get("report_timestamp"), errors="coerce", utc=True).max()
+    if pd.notna(previous) and report_timestamp < previous:
+        raise ImportValidationError(
+            f"Report date {report_timestamp.date()} is older than the latest accepted "
+            f"report ({previous.date()}); snapshots were not replaced"
+        )
+
+
+def merge(master: pd.DataFrame, incoming: pd.DataFrame, ingested_at: str, report_timestamp=None):
     master, incoming = master.copy(), incoming.copy()
     incoming["ingested_at"] = ingested_at
+    if report_timestamp is not None:
+        incoming["report_timestamp"] = report_timestamp.isoformat()
     old_snapshot_count = int(master["source_sheet"].isin(SNAPSHOT_SHEETS).sum())
     persistent = master.loc[~master["source_sheet"].isin(SNAPSHOT_SHEETS)].copy()
     persistent_ids = set(persistent["id"].dropna().astype(str))
@@ -153,11 +181,13 @@ def process_workbook(path: Path, master_path: Path, report_path: Path):
     started = datetime.now(timezone.utc)
     master = load_master(master_path)
     result = read_workbook(path)
-    merged, stats = merge(master, result.rows, started.isoformat())
+    reject_stale_report(master, result.report_timestamp)
+    merged, stats = merge(master, result.rows, started.isoformat(), result.report_timestamp)
     write_master_atomic(merged, master_path)
     report = {
         "status": "success", "workbook": path.name,
         "imported_at_utc": started.isoformat(), "sheet_rows_received": result.sheet_counts,
+        "report_timestamp": result.report_timestamp.isoformat(),
         "rows_accepted": len(result.rows), "rows_rejected": len(result.rejected_rows),
         "rejected_row_details": result.rejected_rows[:50],
         "duplicates_within_upload": result.duplicates_within_upload, **stats,
