@@ -408,14 +408,9 @@
 
 </div>
 
-<footer>Source: Vortexa Panama Canal Report · Braemar plc</footer>
+<footer id="page-footer">Source: Vortexa Panama Canal Report · Braemar plc</footer>
 
 <script>
-// ---------------------------------------------------------------------
-// Sample/placeholder data, shaped exactly like panama_wait_times.json
-// so this file renders something useful before you have a live pull.
-// Replace by fetching the real JSON file (see loadData() below).
-// ---------------------------------------------------------------------
 const SAMPLE_DATA = {
   generated_at_utc: new Date().toISOString(),
   data_source: "vortexa_panama_canal_report_email",
@@ -452,13 +447,9 @@ const SAMPLE_DATA = {
   current_queue: [
     { vessel_name: "SAMPLE LPG CARRIER", vessel_imo: 9000001, vessel_dead_weight: 54500, estimated_capacity_cbm: 88500, direction: "Southbound", lock: "neo_panamax", queue_arrival_time: new Date().toISOString(), hours_waiting_so_far: 26.5 }
   ],
-  weekly_history: {} // filled in below by buildSampleWeeklyHistory()
+  weekly_history: {}
 };
 
-// Generate 52 weeks of illustrative weekly averages so the trend chart has
-// something to show before real panama_wait_times.json data exists. This
-// is NOT real Vortexa data — it's a smooth synthetic series with a mild
-// upward drift + noise, just to preview the chart shape.
 function buildSampleWeeklyHistory(){
   const bands = {
     "84k CBM — Panamax": 1.8,
@@ -488,15 +479,6 @@ function buildSampleWeeklyHistory(){
   return history;
 }
 SAMPLE_DATA.weekly_history = buildSampleWeeklyHistory();
-
-// NOTE: no sample seasonal-range generator here (deliberately). The
-// 5-year seasonal range isn't implemented yet for the current data
-// source (VoyagesCongestionBreakdown) — see fetch_panama_wait_times.py's
-// docstring for why. Faking a synthetic seasonal chart in sample mode
-// would misleadingly promise a feature the real pipeline doesn't
-// currently deliver. SAMPLE_DATA.seasonal_range is left as {} so the
-// dashboard's existing empty-state message shows here too, matching
-// exactly what real data will show until this is built.
 SAMPLE_DATA.seasonal_range = {};
 SAMPLE_DATA.default_market = "LPG";
 SAMPLE_DATA.markets = {
@@ -693,6 +675,28 @@ function fmtUpdated(iso, isSample){
   return isSample ? `Sample generated ${stamp}` : `Last updated ${stamp}`;
 }
 
+function formatDatasetDate(value){
+  if(!value) return "not available";
+  const date = new Date(`${String(value).slice(0,10)}T00:00:00Z`);
+  if(Number.isNaN(date.getTime())) return String(value).slice(0,10);
+  return date.toLocaleDateString("en-GB", {day:"2-digit", month:"short", year:"numeric", timeZone:"UTC"});
+}
+
+function latestSourceDate(data){
+  const queueDates = [];
+  const recordDates = [];
+  Object.values(data.markets || {}).forEach(market => {
+    (market.current_queue || []).forEach(vessel => {
+      if(vessel.queue_arrival_time) queueDates.push(String(vessel.queue_arrival_time).slice(0,10));
+    });
+    (market.vessel_records || []).forEach(vessel => {
+      if(vessel.event_date) recordDates.push(String(vessel.event_date).slice(0,10));
+    });
+  });
+  const candidates = queueDates.length ? queueDates : recordDates;
+  return candidates.length ? candidates.sort().at(-1) : null;
+}
+
 function renderCards(bands){
   const cardsEl = document.getElementById("cards");
   cardsEl.innerHTML = "";
@@ -716,8 +720,6 @@ function renderCards(bands){
 
 function renderChart(bands){
   const labels = Object.keys(bands);
-
-  // Union of direction labels (Northbound/Southbound) across all bands
   const allDirections = [];
   labels.forEach(l => {
     Object.keys(bands[l].by_direction || {}).forEach(s => {
@@ -911,7 +913,7 @@ function renderSeasonalCharts(seasonalRange){
             pointRadius: 0,
             tension: 0.4,
             cubicInterpolationMode: "monotone",
-            backgroundColor: color + "26", // ~15% opacity band fill
+            backgroundColor: color + "26",
             fill: "-1",
             order: 3,
           },
@@ -990,7 +992,7 @@ function renderQueue(queue){
       <td>${escapeHtml(v.direction)}</td>
       <td>${escapeHtml(v.lock)}</td>
       <td>${String(v.queue_arrival_time || "").slice(0,10) || "–"}</td>
-      <td>${v.hours_waiting_so_far ? (v.hours_waiting_so_far/24).toFixed(1) + "d" : "–"}</td>
+      <td>${Number.isFinite(Number(v.hours_waiting_so_far)) ? Math.round(Number(v.hours_waiting_so_far) / 24) + "d" : "–"}</td>
     </tr>
   `).join("");
   el.innerHTML = `
@@ -1079,6 +1081,10 @@ function renderMarket(market){
 function render(data, isSample){
   appData = data;
   document.getElementById("updated-line").textContent = fmtUpdated(data.generated_at_utc, isSample);
+  const generated = new Date(data.generated_at_utc);
+  const generatedStamp = Number.isNaN(generated.getTime()) ? "not available" : generated.toLocaleString("en-GB", {day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:false, timeZone:"UTC"}) + " UTC";
+  const sourceDate = formatDatasetDate(latestSourceDate(data));
+  document.getElementById("page-footer").textContent = `Source: Vortexa Panama Canal Report · Braemar plc · Dashboard updated ${generatedStamp} · Source data through ${sourceDate}`;
   document.getElementById("sample-banner").style.display = isSample ? "block" : "none";
   const select = document.getElementById("market-select");
   select.innerHTML = Object.keys(data.markets).map(market => `<option value="${market}">${market}</option>`).join("");
@@ -1095,8 +1101,6 @@ async function loadData(){
     const data = await res.json();
     render(data, false);
   }catch(err){
-    // Fall back to sample data — expected until the Python script has
-    // been run and panama_wait_times.json is served alongside this file.
     render(SAMPLE_DATA, true);
   }
 }
