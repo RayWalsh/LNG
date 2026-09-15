@@ -204,10 +204,11 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
         listing = fetch(args.listing_url)
+        args.raw_dir.mkdir(parents=True, exist_ok=True)
+        (args.raw_dir / "closed-auction-listing.html").write_text(listing, encoding="utf-8")
         ids = auction_ids(listing)[: args.limit]
         if not ids:
             raise RuntimeError("No auction IDs were discovered on the closed-auction page")
-        args.raw_dir.mkdir(parents=True, exist_ok=True)
         vessels = load_vessels(args.master)
         for auction_id in ids:
             try:
