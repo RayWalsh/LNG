@@ -40,10 +40,11 @@ def main() -> None:
 
         def record_response(response):
             content_type = (response.headers.get("content-type") or "").split(";", 1)[0]
+            route = urlsplit(response.url).path.lower()
             path = safe_url(response.url)
             interesting = (
                 content_type in {"application/pdf", "application/json"}
-                or any(term in path.lower() for term in ("pdf", "download", "auction", "subasta", "tableau", "bootstrap"))
+                or any(term in route for term in ("pdf", "download", "auction", "subasta", "tableau", "bootstrap"))
             )
             if interesting:
                 responses.append({"status": response.status, "content_type": content_type, "url": path})
