@@ -37,6 +37,19 @@ jobs:
               -ext authorityInfoAccess > reports/acp-tls-summary.txt
             cat reports/acp-tls-summary.txt
           fi
+      - name: Complete and verify ACP certificate chain
+        run: |
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            https://secure.globalsign.com/cacert/gsrsaovsslca2018.crt \
+            --output reports/globalsign-rsa-ov-ssl-ca-2018.crt
+          openssl x509 -inform DER \
+            -in reports/globalsign-rsa-ov-ssl-ca-2018.crt \
+            -out reports/globalsign-rsa-ov-ssl-ca-2018.pem
+          cat /etc/ssl/certs/ca-certificates.crt \
+            reports/globalsign-rsa-ov-ssl-ca-2018.pem \
+            > reports/acp-ca-bundle.pem
+          openssl verify -CAfile reports/acp-ca-bundle.pem reports/acp-cert-1.pem
+          echo "ACP_CA_BUNDLE=$GITHUB_WORKSPACE/reports/acp-ca-bundle.pem" >> "$GITHUB_ENV"
       - name: Probe recent closed auctions
         id: probe
         continue-on-error: true
