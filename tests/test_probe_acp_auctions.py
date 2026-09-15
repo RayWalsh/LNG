@@ -1,6 +1,6 @@
 import unittest
 
-from scripts.probe_acp_auctions import auction_ids, candidate_matches, parse_auction
+from scripts.probe_acp_auctions import auction_ids, candidate_matches, parse_auction, visible_text
 
 
 class ProbeAcpAuctionsTests(unittest.TestCase):
@@ -49,6 +49,12 @@ class ProbeAcpAuctionsTests(unittest.TestCase):
         )
         self.assertEqual(matches[0]["confidence"], "confirmed")
         self.assertEqual(matches[0]["reason"], "exact IMO")
+
+    def test_registration_page_text_is_detectable(self):
+        html = "<h1>Registration Required</h1><p>Only registered users may view auctions.</p>"
+        text = visible_text(html).lower()
+        self.assertIn("registration required", text)
+        self.assertIn("only registered users", text)
 
 
 if __name__ == "__main__":
