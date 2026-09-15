@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from playwright.sync_api import sync_playwright
@@ -13,9 +14,23 @@ START_URL = "https://auctioninfo.pancanal.com/en/pdfs"
 
 
 def safe_url(url: str) -> str:
-    """Retain route information but never log queries, fragments, or credentials."""
+    """Retain useful routes without logging queries or path-based credentials."""
     parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.hostname or "", parts.path, "", ""))
+    sensitive_markers = {"auth", "oauth", "session", "sessions", "ticket", "token", "tokens"}
+    segments = parts.path.split("/")
+    redacted = []
+    redact_next = False
+    for segment in segments:
+        lower = segment.lower()
+        looks_secret = bool(
+            redact_next
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{27,}", lower)
+            or (len(segment) >= 24 and re.fullmatch(r"[A-Za-z0-9._~-]+", segment))
+        )
+        redacted.append("[REDACTED]" if looks_secret else segment)
+        redact_next = lower in sensitive_markers
+    safe_path = "/".join(redacted)
+    return urlunsplit((parts.scheme, parts.hostname or "", safe_path, "", ""))
 
 
 def first_visible(page, selectors):
