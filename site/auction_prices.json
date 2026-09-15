@@ -1,0 +1,40 @@
+{
+  "auction_prices": [
+    {
+      "update_date": "2026-09-15",
+      "window_start": "2026-09-09",
+      "window_end": "2026-09-15",
+      "vessel_category": "Neopanamax",
+      "minimum_usd": "100000",
+      "average_usd": "701000",
+      "maximum_usd": "3152000",
+      "source_file": "Subastas.pdf",
+      "source_url": "https://auctioninfo.pancanal.com/en/pdfs",
+      "ingested_at_utc": "2026-09-15T10:12:15.682444+00:00"
+    },
+    {
+      "update_date": "2026-09-15",
+      "window_start": "2026-09-09",
+      "window_end": "2026-09-15",
+      "vessel_category": "Super",
+      "minimum_usd": "55000",
+      "average_usd": "138000",
+      "maximum_usd": "501000",
+      "source_file": "Subastas.pdf",
+      "source_url": "https://auctioninfo.pancanal.com/en/pdfs",
+      "ingested_at_utc": "2026-09-15T10:12:15.682444+00:00"
+    },
+    {
+      "update_date": "2026-09-15",
+      "window_start": "2026-09-09",
+      "window_end": "2026-09-15",
+      "vessel_category": "Regular",
+      "minimum_usd": "15000",
+      "average_usd": "48000",
+      "maximum_usd": "101000",
+      "source_file": "Subastas.pdf",
+      "source_url": "https://auctioninfo.pancanal.com/en/pdfs",
+      "ingested_at_utc": "2026-09-15T10:12:15.682444+00:00"
+    }
+  ]
+}

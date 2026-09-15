@@ -1,0 +1,39 @@
+name: Ingest Panama auction prices
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "uploads/auction/incoming/*.pdf"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install pdfplumber pytest
+      - name: Require one auction PDF
+        run: |
+          shopt -s nullglob
+          files=(uploads/auction/incoming/*.pdf)
+          test "${#files[@]}" -eq 1 || { echo "Upload exactly one PDF; found ${#files[@]}"; exit 1; }
+          echo "AUCTION_PDF=${files[0]}" >> "$GITHUB_ENV"
+      - name: Ingest only unseen update dates
+        run: python scripts/ingest_auction_pdf.py "$AUCTION_PDF"
+      - name: Archive source PDF
+        run: |
+          update_date=$(python -c 'import csv; print(list(csv.DictReader(open("data/auction_prices.csv")))[-1]["update_date"])')
+          mkdir -p uploads/auction/processed
+          mv "$AUCTION_PDF" "uploads/auction/processed/auction-prices-$update_date.pdf"
+      - name: Commit auction history
+        uses: stefanzweifel/git-auto-commit-action@v7
+        with:
+          commit_message: "Update Panama Canal auction prices"
+          file_pattern: "data/auction_prices.csv site/auction_prices.json uploads/auction"

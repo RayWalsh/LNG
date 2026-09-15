@@ -1,0 +1,4 @@
+update_date,window_start,window_end,vessel_category,minimum_usd,average_usd,maximum_usd,source_file,source_url,ingested_at_utc
+2026-09-15,2026-09-09,2026-09-15,Neopanamax,100000,701000,3152000,Subastas.pdf,https://auctioninfo.pancanal.com/en/pdfs,2026-09-15T10:12:15.682444+00:00
+2026-09-15,2026-09-09,2026-09-15,Super,55000,138000,501000,Subastas.pdf,https://auctioninfo.pancanal.com/en/pdfs,2026-09-15T10:12:15.682444+00:00
+2026-09-15,2026-09-09,2026-09-15,Regular,15000,48000,101000,Subastas.pdf,https://auctioninfo.pancanal.com/en/pdfs,2026-09-15T10:12:15.682444+00:00
