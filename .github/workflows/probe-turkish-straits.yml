@@ -2,6 +2,14 @@ name: Probe Turkish Straits data sources
 
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - poc/turkish-straits-kegm
+    paths:
+      - "scripts/probe_turkish_straits_vortexa.py"
+      - "scripts/probe_turkish_straits_kegm.py"
+      - "scripts/ingest_turkish_straits_kegm.py"
+      - ".github/workflows/probe-turkish-straits.yml"
 
 jobs:
   probe:
@@ -27,10 +35,18 @@ jobs:
       - name: Probe KEGM vessel traffic
         run: python3 scripts/probe_turkish_straits_kegm.py
 
-      - name: Upload KEGM diagnostic output
+      - name: Ingest KEGM probe output
+        run: python3 scripts/ingest_turkish_straits_kegm.py artifacts/turkish_straits_kegm_probe.json
+
+      - name: Replay ingestion to prove idempotency
+        run: python3 scripts/ingest_turkish_straits_kegm.py artifacts/turkish_straits_kegm_probe.json
+
+      - name: Upload Turkish Straits PoC output
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: turkish-straits-kegm-probe
-          path: artifacts/turkish_straits_kegm_probe.json
+          name: turkish-straits-poc
+          path: |
+            artifacts/turkish_straits_kegm_probe.json
+            artifacts/turkish_straits_kegm_master.csv
           if-no-files-found: warn
