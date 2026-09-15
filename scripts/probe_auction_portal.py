@@ -36,6 +36,19 @@ def main() -> None:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
+        responses = []
+
+        def record_response(response):
+            content_type = (response.headers.get("content-type") or "").split(";", 1)[0]
+            path = safe_url(response.url)
+            interesting = (
+                content_type in {"application/pdf", "application/json"}
+                or any(term in path.lower() for term in ("pdf", "download", "auction", "subasta", "tableau", "bootstrap"))
+            )
+            if interesting:
+                responses.append({"status": response.status, "content_type": content_type, "url": path})
+
+        page.on("response", record_response)
         page.goto(START_URL, wait_until="domcontentloaded", timeout=60_000)
 
         password_box = first_visible(page, ["input[type=password]"])
@@ -70,24 +83,34 @@ def main() -> None:
         body_text = page.locator("body").inner_text().lower()
         blocked_terms = [term for term in ("invalid password", "incorrect password", "captcha", "verification code", "two-factor") if term in body_text]
         links = []
-        for anchor in page.locator("a").all():
-            href = anchor.get_attribute("href") or ""
-            label = (anchor.inner_text() or "").strip()[:100]
-            if href and any(word in (label + " " + href).lower() for word in ("pdf", "download", "subasta", "auction")):
-                links.append({"label": label, "url": safe_url(urljoin(page.url, href))})
-
-        buttons = [
-            (button.inner_text() or "").strip()[:100]
-            for button in page.locator("button").all()
-            if button.is_visible() and (button.inner_text() or "").strip()
-        ]
+        buttons = []
+        frames = []
+        for frame in page.frames:
+            frame_url = safe_url(frame.url)
+            frames.append({"name": frame.name[:80], "url": frame_url})
+            try:
+                for anchor in frame.locator("a").all():
+                    href = anchor.get_attribute("href") or ""
+                    label = (anchor.inner_text() or "").strip()[:100]
+                    if href and any(word in (label + " " + href).lower() for word in ("pdf", "download", "subasta", "auction")):
+                        links.append({"label": label, "url": safe_url(urljoin(frame.url, href))})
+                buttons.extend(
+                    (button.inner_text() or button.get_attribute("aria-label") or "").strip()[:100]
+                    for button in frame.locator("button, [role=button]").all()
+                    if button.is_visible()
+                    and (button.inner_text() or button.get_attribute("aria-label") or "").strip()
+                )
+            except Exception as exc:
+                frames[-1]["inspection_error"] = type(exc).__name__
         report = {
             "final_url": safe_url(page.url),
             "title": page.title(),
             "password_field_visible": bool(first_visible(page, ["input[type=password]"])),
             "blocked_terms": blocked_terms,
+            "frames": frames,
             "candidate_links": links[:30],
             "visible_buttons": buttons[:30],
+            "interesting_responses": list({json.dumps(item, sort_keys=True): item for item in responses}.values())[-50:],
         }
         print(json.dumps(report, indent=2))
         if report["password_field_visible"] or blocked_terms:
