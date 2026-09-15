@@ -1,0 +1,74 @@
+name: Probe ACP auction archive
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/probe_acp_auctions.py"
+      - "tests/test_probe_acp_auctions.py"
+      - ".github/workflows/probe-acp-auctions.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Run parser tests
+        run: python -m unittest discover -s tests -p 'test_probe_acp_auctions.py'
+      - name: Record ACP TLS certificate chain
+        run: |
+          mkdir -p reports
+          openssl s_client \
+            -connect auction.pancanal.com:443 \
+            -servername auction.pancanal.com \
+            -showcerts </dev/null > reports/acp-tls-chain.txt 2>&1 || true
+          sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' reports/acp-tls-chain.txt \
+            | awk 'BEGIN {n=0} /BEGIN CERTIFICATE/ {n++} {print > ("reports/acp-cert-" n ".pem")}'
+          if [ -s reports/acp-cert-1.pem ]; then
+            openssl x509 -in reports/acp-cert-1.pem -noout \
+              -subject -issuer -dates -fingerprint -sha256 \
+              -ext authorityInfoAccess > reports/acp-tls-summary.txt
+            cat reports/acp-tls-summary.txt
+          fi
+      - name: Complete and verify ACP certificate chain
+        run: |
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            https://secure.globalsign.com/cacert/gsrsaovsslca2018.crt \
+            --output reports/globalsign-rsa-ov-ssl-ca-2018.crt
+          openssl x509 -inform DER \
+            -in reports/globalsign-rsa-ov-ssl-ca-2018.crt \
+            -out reports/globalsign-rsa-ov-ssl-ca-2018.pem
+          cat /etc/ssl/certs/ca-certificates.crt \
+            reports/globalsign-rsa-ov-ssl-ca-2018.pem \
+            > reports/acp-ca-bundle.pem
+          openssl verify -CAfile reports/acp-ca-bundle.pem reports/acp-cert-1.pem
+          echo "ACP_CA_BUNDLE=$GITHUB_WORKSPACE/reports/acp-ca-bundle.pem" >> "$GITHUB_ENV"
+      - name: Probe recent closed auctions
+        id: probe
+        continue-on-error: true
+        run: >-
+          python scripts/probe_acp_auctions.py
+          --limit 20
+          --master data/master_transits.csv
+          --output reports/auction-feasibility.json
+          --raw-dir reports/auction-raw
+      - name: Upload feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-auction-feasibility
+          path: reports/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Fail when ACP could not be evaluated
+        if: steps.probe.outcome == 'failure'
+        run: |
+          echo "The evidence artifact contains the source-access error."
+          exit 1
