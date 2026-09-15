@@ -22,6 +22,21 @@ jobs:
           python-version: "3.11"
       - name: Run parser tests
         run: python -m unittest discover -s tests -p 'test_probe_acp_auctions.py'
+      - name: Record ACP TLS certificate chain
+        run: |
+          mkdir -p reports
+          openssl s_client \
+            -connect auction.pancanal.com:443 \
+            -servername auction.pancanal.com \
+            -showcerts </dev/null > reports/acp-tls-chain.txt 2>&1 || true
+          sed -n '/BEGIN CERTIFICATE/,/END CERTIFICATE/p' reports/acp-tls-chain.txt \
+            | awk 'BEGIN {n=0} /BEGIN CERTIFICATE/ {n++} {print > ("reports/acp-cert-" n ".pem")}'
+          if [ -s reports/acp-cert-1.pem ]; then
+            openssl x509 -in reports/acp-cert-1.pem -noout \
+              -subject -issuer -dates -fingerprint -sha256 \
+              -ext authorityInfoAccess > reports/acp-tls-summary.txt
+            cat reports/acp-tls-summary.txt
+          fi
       - name: Probe recent closed auctions
         id: probe
         continue-on-error: true
