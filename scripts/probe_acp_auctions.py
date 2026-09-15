@@ -31,6 +31,10 @@ DEFAULT_LISTING = urljoin(
 USER_AGENT = "RayWalsh-LNG-auction-feasibility/0.1 (+https://github.com/RayWalsh/LNG)"
 
 
+class RegistrationRequired(RuntimeError):
+    pass
+
+
 class TablesAndLinksParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
@@ -206,6 +210,11 @@ def main() -> int:
         listing = fetch(args.listing_url)
         args.raw_dir.mkdir(parents=True, exist_ok=True)
         (args.raw_dir / "closed-auction-listing.html").write_text(listing, encoding="utf-8")
+        listing_text = visible_text(listing).lower()
+        if "registration required" in listing_text and "only registered users" in listing_text:
+            raise RegistrationRequired(
+                "ACP restricts auction viewing to registered Panama local steamship agents"
+            )
         ids = auction_ids(listing)[: args.limit]
         if not ids:
             raise RuntimeError("No auction IDs were discovered on the closed-auction page")
@@ -226,6 +235,12 @@ def main() -> int:
                 report["errors"].append({"auction_id": auction_id, "error": str(exc)})  # type: ignore[union-attr]
         report["status"] = "complete"
         report["auction_count"] = len(report["auctions"])  # type: ignore[arg-type]
+    except RegistrationRequired as exc:
+        report["status"] = "registration_required"
+        report["errors"].append({"stage": "listing", "error": str(exc)})  # type: ignore[union-attr]
+        args.output.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        print(json.dumps(report, indent=2))
+        return 0
     except Exception as exc:
         report["status"] = "source_unavailable"
         report["errors"].append({"stage": "listing", "error": str(exc)})  # type: ignore[union-attr]
