@@ -1,0 +1,46 @@
+name: Probe ACP auction archive
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/probe_acp_auctions.py"
+      - "tests/test_probe_acp_auctions.py"
+      - ".github/workflows/probe-acp-auctions.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - name: Run parser tests
+        run: python -m unittest discover -s tests -p 'test_probe_acp_auctions.py'
+      - name: Probe recent closed auctions
+        id: probe
+        continue-on-error: true
+        run: >-
+          python scripts/probe_acp_auctions.py
+          --limit 20
+          --master data/master_transits.csv
+          --output reports/auction-feasibility.json
+          --raw-dir reports/auction-raw
+      - name: Upload feasibility evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acp-auction-feasibility
+          path: reports/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Fail when ACP could not be evaluated
+        if: steps.probe.outcome == 'failure'
+        run: |
+          echo "The evidence artifact contains the source-access error."
+          exit 1
