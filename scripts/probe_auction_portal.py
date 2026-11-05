@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from playwright.sync_api import sync_playwright
@@ -13,9 +14,23 @@ START_URL = "https://auctioninfo.pancanal.com/en/pdfs"
 
 
 def safe_url(url: str) -> str:
-    """Retain route information but never log queries, fragments, or credentials."""
+    """Retain useful routes without logging queries or path-based credentials."""
     parts = urlsplit(url)
-    return urlunsplit((parts.scheme, parts.hostname or "", parts.path, "", ""))
+    sensitive_markers = {"auth", "oauth", "session", "sessions", "ticket", "token", "tokens"}
+    segments = parts.path.split("/")
+    redacted = []
+    redact_next = False
+    for segment in segments:
+        lower = segment.lower()
+        looks_secret = bool(
+            redact_next
+            or re.fullmatch(r"[0-9a-f]{8}-[0-9a-f-]{27,}", lower)
+            or (len(segment) >= 24 and re.fullmatch(r"[A-Za-z0-9._~-]+", segment))
+        )
+        redacted.append("[REDACTED]" if looks_secret else segment)
+        redact_next = lower in sensitive_markers
+    safe_path = "/".join(redacted)
+    return urlunsplit((parts.scheme, parts.hostname or "", safe_path, "", ""))
 
 
 def first_visible(page, selectors):
@@ -36,6 +51,20 @@ def main() -> None:
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
+        responses = []
+
+        def record_response(response):
+            content_type = (response.headers.get("content-type") or "").split(";", 1)[0]
+            route = urlsplit(response.url).path.lower()
+            path = safe_url(response.url)
+            interesting = (
+                content_type in {"application/pdf", "application/json"}
+                or any(term in route for term in ("pdf", "download", "auction", "subasta", "tableau", "bootstrap"))
+            )
+            if interesting:
+                responses.append({"status": response.status, "content_type": content_type, "url": path})
+
+        page.on("response", record_response)
         page.goto(START_URL, wait_until="domcontentloaded", timeout=60_000)
 
         password_box = first_visible(page, ["input[type=password]"])
@@ -70,24 +99,34 @@ def main() -> None:
         body_text = page.locator("body").inner_text().lower()
         blocked_terms = [term for term in ("invalid password", "incorrect password", "captcha", "verification code", "two-factor") if term in body_text]
         links = []
-        for anchor in page.locator("a").all():
-            href = anchor.get_attribute("href") or ""
-            label = (anchor.inner_text() or "").strip()[:100]
-            if href and any(word in (label + " " + href).lower() for word in ("pdf", "download", "subasta", "auction")):
-                links.append({"label": label, "url": safe_url(urljoin(page.url, href))})
-
-        buttons = [
-            (button.inner_text() or "").strip()[:100]
-            for button in page.locator("button").all()
-            if button.is_visible() and (button.inner_text() or "").strip()
-        ]
+        buttons = []
+        frames = []
+        for frame in page.frames:
+            frame_url = safe_url(frame.url)
+            frames.append({"name": frame.name[:80], "url": frame_url})
+            try:
+                for anchor in frame.locator("a").all():
+                    href = anchor.get_attribute("href") or ""
+                    label = (anchor.inner_text() or "").strip()[:100]
+                    if href and any(word in (label + " " + href).lower() for word in ("pdf", "download", "subasta", "auction")):
+                        links.append({"label": label, "url": safe_url(urljoin(frame.url, href))})
+                buttons.extend(
+                    (button.inner_text() or button.get_attribute("aria-label") or "").strip()[:100]
+                    for button in frame.locator("button, [role=button]").all()
+                    if button.is_visible()
+                    and (button.inner_text() or button.get_attribute("aria-label") or "").strip()
+                )
+            except Exception as exc:
+                frames[-1]["inspection_error"] = type(exc).__name__
         report = {
             "final_url": safe_url(page.url),
             "title": page.title(),
             "password_field_visible": bool(first_visible(page, ["input[type=password]"])),
             "blocked_terms": blocked_terms,
+            "frames": frames,
             "candidate_links": links[:30],
             "visible_buttons": buttons[:30],
+            "interesting_responses": list({json.dumps(item, sort_keys=True): item for item in responses}.values())[-50:],
         }
         print(json.dumps(report, indent=2))
         if report["password_field_visible"] or blocked_terms:
